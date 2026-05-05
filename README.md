@@ -52,3 +52,5 @@ For best nearby results, add exact article coordinates in the post editor box:
 - Longitude
 
 The plugin can infer approximate article locations from titles, categories, tags, and known place clues, but exact coordinates are still better for precise nearby sorting.
+
+When a place is known by name, the picker uses that named-place coordinate before falling back to country or region centers. If a result still appears in the wrong place, add exact coordinates in the post editor and rebuild the cache.
