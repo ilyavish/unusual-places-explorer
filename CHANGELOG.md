@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.1.2 - 2026-05-05
+
+- Add named coordinates for St. Roch Cemetery Chapel in New Orleans.
+- Add named coordinates for The Godfather filming locations in Sicily and Tonga Room in San Francisco.
+- Decode public post titles and excerpts before output so entities like `&#8220;`, `&#8217;`, and `&#038;` display as readable punctuation.
+
 ## 1.1.1 - 2026-05-05
 
 - Add article/place-specific coordinate inference for Saint-Cado, Uplistsikhe, Georgia articles, France articles, and other common archive places.

@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Unusual Places Explorer
  * Description: Adds The Strange Place Picker shortcode for discovering published unusualplaces.org articles.
- * Version: 1.1.1
+ * Version: 1.1.2
  * Author: Unusual Places
  * Text Domain: unusual-places-explorer
  */
@@ -12,9 +12,9 @@ if (!defined('ABSPATH')) {
 }
 
 final class UP_Strange_Place_Picker {
-	const VERSION = '1.1.1';
+	const VERSION = '1.1.2';
 	const SHORTCODE = 'up_strange_place_picker';
-	const CACHE_KEY = 'up_spp_index_v111';
+	const CACHE_KEY = 'up_spp_index_v112';
 	const CRON_HOOK = 'up_spp_monthly_rebuild';
 	const META_LAT = '_up_spp_lat';
 	const META_LNG = '_up_spp_lng';
@@ -203,6 +203,11 @@ final class UP_Strange_Place_Picker {
 		return is_wp_error($terms) || empty($terms) ? array() : array_values(wp_list_pluck($terms, 'name'));
 	}
 
+	private function decode_public_text($text) {
+		$text = html_entity_decode((string) $text, ENT_QUOTES | ENT_HTML5, get_bloginfo('charset') ?: 'UTF-8');
+		return wp_specialchars_decode($text, ENT_QUOTES);
+	}
+
 	private function keyword_score($text, $word) {
 		$word = strtolower(trim($word));
 		if ('' === $word) {
@@ -312,7 +317,7 @@ final class UP_Strange_Place_Picker {
 	}
 
 	private function context_text($post, $categories, $tags) {
-		return wp_strip_all_tags($post->post_title . ' ' . $post->post_title . ' ' . $post->post_excerpt . ' ' . wp_trim_words($post->post_content, 260, '') . ' ' . implode(' ', $categories) . ' ' . implode(' ', $categories) . ' ' . implode(' ', $tags) . ' ' . implode(' ', $tags));
+		return $this->decode_public_text(wp_strip_all_tags($post->post_title . ' ' . $post->post_title . ' ' . $post->post_excerpt . ' ' . wp_trim_words($post->post_content, 260, '') . ' ' . implode(' ', $categories) . ' ' . implode(' ', $categories) . ' ' . implode(' ', $tags) . ' ' . implode(' ', $tags)));
 	}
 
 	private function location_dictionary() {
@@ -362,12 +367,18 @@ final class UP_Strange_Place_Picker {
 			array('label' => 'Sark Island, Guernsey', 'lat' => 49.4306, 'lng' => -2.3656, 'words' => array('sark island')),
 			array('label' => 'Andorra', 'lat' => 42.5063, 'lng' => 1.5218, 'words' => array('why visit andorra', 'andorra')),
 			array('label' => 'Park of the Monsters, Bomarzo, Italy', 'lat' => 42.491, 'lng' => 12.247, 'words' => array('park of the monsters', 'bomarzo')),
+			array('label' => 'The Godfather filming locations, Savoca, Sicily', 'lat' => 37.953864, 'lng' => 15.341291, 'words' => array('godfather filming locations', 'the godfather filming locations', 'chiesa di san nicolò', 'chiesa di san nicolo', 'bar vitelli')),
+			array('label' => "Forza d'Agro, Sicily", 'lat' => 37.915197, 'lng' => 15.33343, 'words' => array("forza d'agrò", "forza d'agro", 'forza d’agrò')),
+			array('label' => 'Castello degli Schiavi, Sicily', 'lat' => 37.791577, 'lng' => 15.223368, 'words' => array('castello degli schiavi')),
+			array('label' => 'Taormina, Sicily', 'lat' => 37.851637, 'lng' => 15.285313, 'words' => array('taormina')),
 			array('label' => 'Dog Bark Park Inn, Idaho, USA', 'lat' => 46.049, 'lng' => -116.35, 'words' => array('beagle’s belly', "beagle's belly", 'dog bark park')),
 			array('label' => 'Abandoned Sinai Outdoor Cinema, Egypt', 'lat' => 27.91, 'lng' => 34.30, 'words' => array('outdoor movie theater of the sinai', 'sinai desert')),
 			array('label' => 'The Narrows, Zion National Park, USA', 'lat' => 37.2982, 'lng' => -112.9484, 'words' => array('the narrows', 'utah daredevil slot canyon')),
 			array('label' => "Cano's Castle, Colorado, USA", 'lat' => 37.079, 'lng' => -106.009, 'words' => array("cano's castle", 'canos castle')),
 			array('label' => 'Hot Springs National Park, USA', 'lat' => 34.521, 'lng' => -93.042, 'words' => array('hot springs national park')),
 			array('label' => 'Bruce Peninsula Grotto, Canada', 'lat' => 45.245, 'lng' => -81.524, 'words' => array('bruce peninsula', 'shimmering sea cave')),
+			array('label' => 'St. Roch Cemetery Chapel, New Orleans, USA', 'lat' => 29.97525, 'lng' => -90.05194, 'words' => array('st. roch chapel', 'st roch chapel', 'st. roch cemetery', 'st roch cemetery', 'shrine of st. roch', 'shrine of saint roch')),
+			array('label' => 'Tonga Room & Hurricane Bar, San Francisco, USA', 'lat' => 37.7924, 'lng' => -122.4102, 'words' => array('tonga room', 'hurricane bar', 'fairmont hotel in san francisco')),
 			array('label' => 'Savannah, Georgia, USA', 'lat' => 32.0809, 'lng' => -81.0912, 'words' => array('savannah', 'bonaventure', 'forrest gump')),
 			array('label' => 'Bonaventure Cemetery, Savannah, USA', 'lat' => 32.045, 'lng' => -81.0508, 'words' => array('bonaventure cemetery')),
 			array('label' => 'Atlanta, Georgia, USA', 'lat' => 33.749, 'lng' => -84.388, 'words' => array('atlanta')),
@@ -602,6 +613,7 @@ final class UP_Strange_Place_Picker {
 			if ('' === $excerpt) {
 				$excerpt = wp_trim_words(wp_strip_all_tags($post->post_content), 24, '...');
 			}
+			$excerpt = $this->decode_public_text($excerpt);
 
 			foreach ($regions as $region) {
 				if ('Anywhere' !== $region) {
@@ -614,9 +626,9 @@ final class UP_Strange_Place_Picker {
 
 			$posts[] = array(
 				'id' => $post_id,
-				'title' => get_the_title($post_id),
+				'title' => $this->decode_public_text(get_the_title($post_id)),
 				'url' => get_permalink($post_id),
-				'excerpt' => wp_trim_words($excerpt, 28, '...'),
+				'excerpt' => $this->decode_public_text(wp_trim_words($excerpt, 28, '...')),
 				'image' => get_the_post_thumbnail_url($post_id, 'large'),
 				'regions' => $regions,
 				'regionLabel' => $regions[0],
