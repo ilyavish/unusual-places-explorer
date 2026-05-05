@@ -1,16 +1,14 @@
 # Changelog
 
+## 1.1.0 - 2026-05-05
+
+- Store inferred moods, regions, type, and approximate article coordinates during cache rebuilds and post saves.
+- Prefer exact/manual coordinates over inferred coordinates.
+- Add conservative place and region inference so location mode can sort more nearby articles without relying on the old XML export.
+- Display inferred coordinate and classification details in the post editor meta box.
+- Hide the mobile location troubleshooting note on desktop.
+
 ## 1.0.0 - 2026-05-05
 
-Initial public plugin release.
-
-- Adds `[up_strange_place_picker]` shortcode.
-- Builds a curated index from live published WordPress posts.
-- Adds mood filters: Beautiful, Creepy, Forgotten, Fairytale, Movie-like, Ancient, Abandoned, Roadside weird, Peaceful but strange.
-- Adds interactive region picker with top-level regions and available countries/states.
-- Adds browser-location mode with client-side Haversine distance sorting.
-- Keeps visitor coordinates client-side only; no cookies, no storage, no third-party APIs.
-- Adds mobile-first picker UI and location status messaging.
-- Adds monthly WP-Cron rebuild, rebuild-on-post-save, and manual admin rebuild.
-- Adds admin mood/index coverage stats.
-- Adds post editor coordinate fields for exact nearby search.
+- Initial WordPress plugin version of The Strange Place Picker.
+- Added shortcode, live post indexing, monthly rebuilds, admin rebuild button, mobile-first picker UI, and client-side location sorting.
