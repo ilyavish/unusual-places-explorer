@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Unusual Places Explorer
  * Description: Adds The Strange Place Picker shortcode for discovering published unusualplaces.org articles.
- * Version: 1.0.0
+ * Version: 1.1.1
  * Author: Unusual Places
  * Text Domain: unusual-places-explorer
  */
@@ -12,13 +12,20 @@ if (!defined('ABSPATH')) {
 }
 
 final class UP_Strange_Place_Picker {
-	const VERSION = '1.0.0';
+	const VERSION = '1.1.1';
 	const SHORTCODE = 'up_strange_place_picker';
-	const CACHE_KEY = 'up_spp_index_v100';
+	const CACHE_KEY = 'up_spp_index_v111';
 	const CRON_HOOK = 'up_spp_monthly_rebuild';
 	const META_LAT = '_up_spp_lat';
 	const META_LNG = '_up_spp_lng';
 	const META_LABEL = '_up_spp_place_label';
+	const META_INFERRED_LAT = '_up_spp_inferred_lat';
+	const META_INFERRED_LNG = '_up_spp_inferred_lng';
+	const META_INFERRED_LABEL = '_up_spp_inferred_place_label';
+	const META_GEO_SOURCE = '_up_spp_geo_source';
+	const META_MOODS = '_up_spp_inferred_moods';
+	const META_TYPE = '_up_spp_inferred_type';
+	const META_REGIONS = '_up_spp_inferred_regions';
 
 	private static $instance = null;
 
@@ -52,8 +59,19 @@ final class UP_Strange_Place_Picker {
 	}
 
 	public function register_assets() {
-		wp_register_style('up-strange-place-picker', plugins_url('assets/picker.css', __FILE__), array(), self::VERSION);
-		wp_register_script('up-strange-place-picker', plugins_url('assets/picker.js', __FILE__), array(), self::VERSION, true);
+		wp_register_style(
+			'up-strange-place-picker',
+			plugins_url('assets/picker.css', __FILE__),
+			array(),
+			self::VERSION
+		);
+		wp_register_script(
+			'up-strange-place-picker',
+			plugins_url('assets/picker.js', __FILE__),
+			array(),
+			self::VERSION,
+			true
+		);
 	}
 
 	public function shortcode() {
@@ -91,28 +109,67 @@ final class UP_Strange_Place_Picker {
 							<button type="button" class="up-spp__chip up-spp__chip--top<?php echo 'Anywhere' === $region ? ' is-active' : ''; ?>" data-region-group="<?php echo esc_attr($region); ?>" data-region="<?php echo esc_attr($region); ?>" aria-pressed="<?php echo 'Anywhere' === $region ? 'true' : 'false'; ?>"><?php echo esc_html($region); ?></button>
 						<?php endforeach; ?>
 					</div>
-					<div class="up-spp__country-picker" data-up-spp-country-wrap hidden><p data-up-spp-country-label>Choose a country</p><div class="up-spp__buttons" data-up-spp-countries></div></div>
-					<div class="up-spp__geo"><button type="button" class="up-spp__geo-button" data-up-spp-location aria-pressed="false">Use my location</button><p>Used only to suggest nearby unusual places. Nothing is saved.</p></div>
+
+					<div class="up-spp__country-picker" data-up-spp-country-wrap hidden>
+						<p data-up-spp-country-label>Choose a country</p>
+						<div class="up-spp__buttons" data-up-spp-countries></div>
+					</div>
+
+					<div class="up-spp__geo">
+						<button type="button" class="up-spp__geo-button" data-up-spp-location aria-pressed="false">Use my location</button>
+						<p>Used only to suggest nearby unusual places. Nothing is saved.</p>
+					</div>
+
 					<div class="up-spp__radius">
 						<label for="<?php echo esc_attr($uid); ?>-radius"><span>Search radius</span><strong data-up-spp-radius-label>250 km</strong></label>
 						<input id="<?php echo esc_attr($uid); ?>-radius" type="range" min="25" max="2000" step="25" value="250" data-up-spp-radius>
-						<div class="up-spp__radius-presets" aria-label="Quick radius choices"><button type="button" data-up-spp-radius-preset="50">50 km</button><button type="button" data-up-spp-radius-preset="250" class="is-active">250 km</button><button type="button" data-up-spp-radius-preset="750">750 km</button><button type="button" data-up-spp-radius-preset="2000">2000 km</button></div>
+						<div class="up-spp__radius-presets" aria-label="Quick radius choices">
+							<button type="button" data-up-spp-radius-preset="50">50 km</button>
+							<button type="button" data-up-spp-radius-preset="250" class="is-active">250 km</button>
+							<button type="button" data-up-spp-radius-preset="750">750 km</button>
+							<button type="button" data-up-spp-radius-preset="2000">2000 km</button>
+						</div>
 						<p>Start close. Increase the radius only when there are not enough nearby articles yet.</p>
 					</div>
 				</div>
+
 				<button type="button" class="up-spp__find" data-up-spp-find>Find My Strange Place</button>
 				<p class="up-spp__status" data-up-spp-status aria-live="polite"></p>
-				<details class="up-spp__mobile-help"><summary>Location not working on mobile?</summary><p>Open this page on HTTPS, then allow location for your browser. On iPhone Safari, check Settings &gt; Privacy &amp; Security &gt; Location Services &gt; Safari Websites.</p></details>
+				<details class="up-spp__mobile-help">
+					<summary>Location not working on mobile?</summary>
+					<p>Open this page on HTTPS, then allow location for your browser. On iPhone Safari, check Settings > Privacy &amp; Security > Location Services > Safari Websites.</p>
+				</details>
 			</div>
 
-			<div class="up-spp__results" data-up-spp-results aria-live="polite"><?php echo $starter ? $this->render_static_card($starter) : '<p class="up-spp__empty">No published unusual-place articles were found yet.</p>'; ?></div>
+			<div class="up-spp__results" data-up-spp-results aria-live="polite">
+				<?php echo $starter ? $this->render_static_card($starter) : '<p class="up-spp__empty">No published unusual-place articles were found yet.</p>'; ?>
+			</div>
 
 			<?php if (!empty($posts)) : ?>
-				<div class="up-spp__crawl"><h3>Popular unusual places from the archive</h3><ul><?php foreach (array_slice($posts, 0, 10) as $post) : ?><li><a href="<?php echo esc_url($post['url']); ?>"><?php echo esc_html($post['title']); ?></a></li><?php endforeach; ?></ul></div>
+				<div class="up-spp__crawl">
+					<h3>Popular unusual places from the archive</h3>
+					<ul>
+						<?php foreach (array_slice($posts, 0, 10) as $post) : ?>
+							<li><a href="<?php echo esc_url($post['url']); ?>"><?php echo esc_html($post['title']); ?></a></li>
+						<?php endforeach; ?>
+					</ul>
+				</div>
 			<?php endif; ?>
 
-			<div class="up-spp__affiliate" aria-label="Future travel planning links"><div>Stay nearby</div><div>Find tours nearby</div><div>Rent a car for this route</div></div>
-			<div class="up-spp__faq"><h3>Strange Place Picker FAQ</h3><details><summary>What is The Strange Place Picker?</summary><p>It is a discovery tool for finding strange places to visit, weird travel ideas, and unusual stories from the Unusual Places archive.</p></details><details><summary>Can it find unusual places near me?</summary><p>Yes, when articles have coordinates or a place can be approximately inferred. Your location stays in your browser.</p></details><details><summary>Does it save my location?</summary><p>No. The plugin does not store visitor coordinates, create cookies, or send your location to third-party APIs.</p></details><details><summary>Are these real places?</summary><p>Yes. Results link to published Unusual Places articles about real destinations, landmarks, oddities, and travel stories.</p></details></div>
+			<div class="up-spp__affiliate" aria-label="Future travel planning links">
+				<div>Stay nearby</div>
+				<div>Find tours nearby</div>
+				<div>Rent a car for this route</div>
+			</div>
+
+			<div class="up-spp__faq">
+				<h3>Strange Place Picker FAQ</h3>
+				<details><summary>What is The Strange Place Picker?</summary><p>It is a discovery tool for finding strange places to visit, weird travel ideas, and unusual stories from the Unusual Places archive.</p></details>
+				<details><summary>Can it find unusual places near me?</summary><p>Yes, when articles have coordinates or a place can be approximately inferred. Your location stays in your browser.</p></details>
+				<details><summary>Does it save my location?</summary><p>No. The plugin does not store visitor coordinates, create cookies, or send your location to third-party APIs.</p></details>
+				<details><summary>Are these real places?</summary><p>Yes. Results link to published Unusual Places articles about real destinations, landmarks, oddities, and travel stories.</p></details>
+			</div>
+
 			<script type="application/json" data-up-spp-json><?php echo wp_json_encode($data, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?></script>
 		</section>
 		<?php
@@ -123,8 +180,19 @@ final class UP_Strange_Place_Picker {
 		ob_start();
 		?>
 		<article class="up-spp__card up-spp__card--main">
-			<?php if (!empty($post['image'])) : ?><a href="<?php echo esc_url($post['url']); ?>" class="up-spp__image-link"><img src="<?php echo esc_url($post['image']); ?>" alt="<?php echo esc_attr($post['title']); ?>" loading="eager"></a><?php endif; ?>
-			<div class="up-spp__card-body"><p class="up-spp__meta"><?php echo esc_html($post['regionLabel']); ?> · <?php echo esc_html($post['moodLabel']); ?> · <?php echo esc_html($post['type']); ?></p><h3><a href="<?php echo esc_url($post['url']); ?>"><?php echo esc_html($post['title']); ?></a></h3><p><?php echo esc_html($post['excerpt']); ?></p><p class="up-spp__best">Best for <?php echo esc_html($post['bestFor']); ?>.</p><div class="up-spp__actions"><a class="up-spp__read" href="<?php echo esc_url($post['url']); ?>">Read the full article</a><button type="button" class="up-spp__another" data-up-spp-another>Show me another</button></div></div>
+			<?php if (!empty($post['image'])) : ?>
+				<a href="<?php echo esc_url($post['url']); ?>" class="up-spp__image-link"><img src="<?php echo esc_url($post['image']); ?>" alt="<?php echo esc_attr($post['title']); ?>" loading="eager"></a>
+			<?php endif; ?>
+			<div class="up-spp__card-body">
+				<p class="up-spp__meta"><?php echo esc_html($post['regionLabel']); ?> · <?php echo esc_html($post['moodLabel']); ?> · <?php echo esc_html($post['type']); ?></p>
+				<h3><a href="<?php echo esc_url($post['url']); ?>"><?php echo esc_html($post['title']); ?></a></h3>
+				<p><?php echo esc_html($post['excerpt']); ?></p>
+				<p class="up-spp__best">Best for <?php echo esc_html($post['bestFor']); ?>.</p>
+				<div class="up-spp__actions">
+					<a class="up-spp__read" href="<?php echo esc_url($post['url']); ?>">Read the full article</a>
+					<button type="button" class="up-spp__another" data-up-spp-another>Show me another</button>
+				</div>
+			</div>
 		</article>
 		<?php
 		return ob_get_clean();
@@ -137,14 +205,18 @@ final class UP_Strange_Place_Picker {
 
 	private function keyword_score($text, $word) {
 		$word = strtolower(trim($word));
-		if ('' === $word) return 0;
+		if ('' === $word) {
+			return 0;
+		}
 		$pattern = '/(?<![a-z0-9])' . preg_quote($word, '/') . '(?![a-z0-9])/';
 		return preg_match($pattern, $text) ? (false !== strpos($word, ' ') ? 3 : 1) : 0;
 	}
 
 	private function contains($text, $words) {
 		foreach ($words as $word) {
-			if ($this->keyword_score($text, $word) > 0) return true;
+			if ($this->keyword_score($text, $word) > 0) {
+				return true;
+			}
 		}
 		return false;
 	}
@@ -167,45 +239,218 @@ final class UP_Strange_Place_Picker {
 		$scores = array();
 		foreach ($this->mood_keywords() as $mood => $words) {
 			$scores[$mood] = 0;
-			foreach ($words as $word) $scores[$mood] += $this->keyword_score($text, $word);
+			foreach ($words as $word) {
+				$scores[$mood] += $this->keyword_score($text, $word);
+			}
 		}
-		if ($scores['Abandoned'] > 0) $scores['Forgotten'] += 1;
-		if ($scores['Ancient'] > 0 && false !== strpos($text, 'ruin')) $scores['Forgotten'] += 1;
-		if ($scores['Creepy'] > 0 && (false !== strpos($text, 'cemetery') || false !== strpos($text, 'tomb') || false !== strpos($text, 'burial'))) $scores['Ancient'] += 1;
+		if ($scores['Abandoned'] > 0) {
+			$scores['Forgotten'] += 1;
+		}
+		if ($scores['Ancient'] > 0 && false !== strpos($text, 'ruin')) {
+			$scores['Forgotten'] += 1;
+		}
+		if ($scores['Creepy'] > 0 && (false !== strpos($text, 'cemetery') || false !== strpos($text, 'tomb') || false !== strpos($text, 'burial'))) {
+			$scores['Ancient'] += 1;
+		}
 		arsort($scores);
 		$moods = array();
 		foreach ($scores as $mood => $score) {
-			if ($score > 0) $moods[] = $mood;
-			if (count($moods) >= 4) break;
+			if ($score > 0) {
+				$moods[] = $mood;
+			}
+			if (count($moods) >= 4) {
+				break;
+			}
 		}
 		return empty($moods) ? array('Peaceful but strange') : array_values(array_unique($moods));
 	}
 
 	private function type($text) {
-		$types = array('Natural wonder' => array('lake', 'mountain', 'waterfall', 'island', 'beach', 'forest', 'desert', 'cave', 'volcano', 'rock formation'), 'Abandoned place' => array('abandoned', 'ghost town', 'derelict', 'ruins'), 'Historic site' => array('ancient', 'monastery', 'church', 'temple', 'castle', 'fortress', 'palace', 'monument', 'cathedral'), 'Architectural oddity' => array('building', 'house', 'architecture', 'bridge', 'tower'), 'Roadside attraction' => array('roadside', 'oddity', 'giant', 'quirky'));
-		foreach ($types as $type => $words) if ($this->contains($text, $words)) return $type;
+		$types = array(
+			'Natural wonder' => array('lake', 'mountain', 'waterfall', 'island', 'beach', 'forest', 'desert', 'cave', 'volcano', 'rock formation'),
+			'Abandoned place' => array('abandoned', 'ghost town', 'derelict', 'ruins'),
+			'Historic site' => array('ancient', 'monastery', 'church', 'temple', 'castle', 'fortress', 'palace', 'monument', 'cathedral'),
+			'Architectural oddity' => array('building', 'house', 'architecture', 'bridge', 'tower'),
+			'Roadside attraction' => array('roadside', 'oddity', 'giant', 'quirky'),
+		);
+		foreach ($types as $type => $words) {
+			if ($this->contains($text, $words)) {
+				return $type;
+			}
+		}
 		return 'Unusual place';
 	}
 
 	private function regions($categories, $text) {
 		$regions = array();
 		$category_lc = array_map('strtolower', $categories);
-		$add = function($region) use (&$regions) { if (!in_array($region, $regions, true)) $regions[] = $region; };
+		$add = function($region) use (&$regions) {
+			if (!in_array($region, $regions, true)) {
+				$regions[] = $region;
+			}
+		};
 		$usa_terms = array('usa', 'united states', 'north america', 'california', 'florida', 'arizona', 'texas', 'new york', 'oregon', 'nevada', 'tennessee', 'utah', 'alaska', 'hawaii', 'colorado', 'washington');
 		$europe_terms = array('europe', 'georgia', 'italy', 'france', 'uk', 'united kingdom', 'england', 'scotland', 'wales', 'spain', 'germany', 'iceland', 'portugal', 'norway', 'greece', 'ireland', 'turkey', 'russia', 'netherlands', 'croatia', 'sweden', 'poland', 'switzerland', 'austria', 'denmark', 'serbia');
-		if (array_intersect($category_lc, $usa_terms) || preg_match('/\b(usa|united states|oregon|california|florida|arizona|texas|new york)\b/', $text)) $add('USA');
-		if (in_array('europe', $category_lc, true) || array_intersect($category_lc, $europe_terms)) $add('Europe');
+		if (array_intersect($category_lc, $usa_terms) || preg_match('/\b(usa|united states|oregon|california|florida|arizona|texas|new york)\b/', $text)) {
+			$add('USA');
+		}
+		if (in_array('europe', $category_lc, true) || array_intersect($category_lc, $europe_terms)) {
+			$add('Europe');
+		}
 		foreach (array('Georgia', 'Italy', 'France', 'UK', 'Spain', 'Germany', 'Iceland', 'Portugal', 'Norway', 'Greece', 'Ireland', 'Turkey', 'Russia', 'Japan', 'China', 'India', 'Thailand', 'Indonesia', 'Vietnam', 'Cambodia', 'Australia', 'New Zealand', 'Brazil', 'Argentina', 'Chile', 'Peru', 'Bolivia') as $region) {
-			if (in_array(strtolower($region), $category_lc, true) || false !== strpos($text, ' ' . strtolower($region))) $add($region);
+			if (in_array(strtolower($region), $category_lc, true) || false !== strpos($text, ' ' . strtolower($region))) {
+				$add($region);
+			}
 		}
 		foreach ($categories as $category) {
-			if (in_array($category, array('Travel', 'North America', 'Europe', 'Asia', 'South America', 'Africa', 'Middle East', 'Oceania', 'Uncategorized'), true)) continue;
+			if (in_array($category, array('Travel', 'North America', 'Europe', 'Asia', 'South America', 'Africa', 'Middle East', 'Oceania', 'Uncategorized'), true)) {
+				continue;
+			}
 			$add($category);
 		}
 		return empty($regions) ? array('Anywhere') : $regions;
 	}
 
-	private function coords($post_id) {
+	private function context_text($post, $categories, $tags) {
+		return wp_strip_all_tags($post->post_title . ' ' . $post->post_title . ' ' . $post->post_excerpt . ' ' . wp_trim_words($post->post_content, 260, '') . ' ' . implode(' ', $categories) . ' ' . implode(' ', $categories) . ' ' . implode(' ', $tags) . ' ' . implode(' ', $tags));
+	}
+
+	private function location_dictionary() {
+		return array(
+			array('label' => 'Katskhi Pillar, Georgia', 'lat' => 42.2875, 'lng' => 43.2153, 'words' => array('katskhi pillar', 'katskhi')),
+			array('label' => 'Tbilisi, Georgia', 'lat' => 41.7151, 'lng' => 44.8271, 'words' => array('tbilisi', 'coffee factory')),
+			array('label' => 'Vardzia, Georgia', 'lat' => 41.3817, 'lng' => 43.2846, 'words' => array('vardzia')),
+			array('label' => 'Gergeti Trinity Church, Georgia', 'lat' => 42.6629, 'lng' => 44.6206, 'words' => array('gergeti', 'trinity church', 'kazbegi', 'stepantsminda')),
+			array('label' => 'Tusheti, Georgia', 'lat' => 42.37, 'lng' => 45.63, 'words' => array('tusheti', 'omalo', 'road to tusheti')),
+			array('label' => 'Svaneti, Georgia', 'lat' => 43.043, 'lng' => 42.729, 'words' => array('svaneti', 'mestia', 'ushguli')),
+			array('label' => 'Uplistsikhe, Georgia', 'lat' => 41.967493, 'lng' => 44.20758, 'words' => array('uplistsikhe', 'uplistkhe', 'uplisziche')),
+			array('label' => 'Khevsureti, Georgia', 'lat' => 42.52, 'lng' => 44.93, 'words' => array('khevsureti')),
+			array('label' => 'Anatori, Georgia', 'lat' => 42.63, 'lng' => 45.16, 'words' => array('anatori')),
+			array('label' => 'Batumi, Georgia', 'lat' => 41.6168, 'lng' => 41.6367, 'words' => array('batumi', 'adjara coastline', 'sea slippers')),
+			array('label' => 'Adjara, Georgia', 'lat' => 41.65, 'lng' => 42.0, 'words' => array('adjara')),
+			array('label' => 'Tsemistskali, Georgia', 'lat' => 41.805, 'lng' => 43.483, 'words' => array('tsemistskali', 'tsagveri', 'eiffel bridge')),
+			array('label' => 'Chiatura, Georgia', 'lat' => 42.289, 'lng' => 43.281, 'words' => array('chiatura')),
+			array('label' => 'Mtskheta, Georgia', 'lat' => 41.845, 'lng' => 44.718, 'words' => array('mtskheta')),
+			array('label' => 'David Gareja, Georgia', 'lat' => 41.447, 'lng' => 45.376, 'words' => array('david gareja', 'gareja')),
+			array('label' => 'Mont-Saint-Michel, France', 'lat' => 48.6361, 'lng' => -1.5115, 'words' => array('mont-saint-michel', 'mont saint michel')),
+			array('label' => 'Palais Ideal, Hauterives, France', 'lat' => 45.2552, 'lng' => 5.0263, 'words' => array('ideal palace', 'ferdinand cheval', 'palais ideal', 'palais idéal')),
+			array('label' => 'Catacombs of Paris, France', 'lat' => 48.8338, 'lng' => 2.3324, 'words' => array('catacombs of paris', 'paris catacombs')),
+			array('label' => 'Eguisheim, France', 'lat' => 48.0421, 'lng' => 7.306, 'words' => array('eguisheim')),
+			array('label' => 'Equihen-Plage, France', 'lat' => 50.675, 'lng' => 1.573, 'words' => array('equihen plage', 'equihen-plage', 'upside down boat houses')),
+			array('label' => "Saint-Michel d'Aiguilhe, France", 'lat' => 45.0483, 'lng' => 3.8855, 'words' => array("saint michel d'aiguilhe", "saint-michel d'aiguilhe", 'chapel of saint michel')),
+			array('label' => 'Passage du Gois, France', 'lat' => 46.929, 'lng' => -2.114, 'words' => array('passage du gois', 'le passage du gois')),
+			array('label' => 'Bozouls, France', 'lat' => 44.4706, 'lng' => 2.7207, 'words' => array('bozouls', 'giant hole', 'medieval french town on the edge')),
+			array('label' => 'Saint-Cado Islet, France', 'lat' => 47.68762, 'lng' => -3.18483, 'words' => array('saint-cado', 'saint cado', 'nichtarguer', 'nichtarguér', 'belz', 'etel river', 'étel river')),
+			array('label' => 'Verdon Gorge, France', 'lat' => 43.749, 'lng' => 6.328, 'words' => array('verdon gorge', 'gorges du verdon')),
+			array('label' => 'Bubble Palace, France', 'lat' => 43.5015, 'lng' => 6.9359, 'words' => array('bubble palace', 'palais bulles')),
+			array('label' => 'Pere Lachaise Cemetery, France', 'lat' => 48.8614, 'lng' => 2.3933, 'words' => array('pere lachaise', 'père lachaise')),
+			array('label' => 'Nice, France', 'lat' => 43.7102, 'lng' => 7.262, 'words' => array('nice treasures', "nice's treasures", 'french riviera adventure')),
+			array('label' => 'Menton, France', 'lat' => 43.775, 'lng' => 7.497, 'words' => array('fete du citron', 'fête du citron', 'menton')),
+			array('label' => "Chateau d'If, France", 'lat' => 43.2799, 'lng' => 5.325, 'words' => array("chateau d'if", "château d'if")),
+			array('label' => 'Palombaggia Beach, Corsica', 'lat' => 41.558, 'lng' => 9.335, 'words' => array('palombaggia')),
+			array('label' => 'Annecy, France', 'lat' => 45.8992, 'lng' => 6.1294, 'words' => array('annecy')),
+			array('label' => 'Gordes, France', 'lat' => 43.911, 'lng' => 5.2009, 'words' => array('gordes')),
+			array('label' => 'Machines of the Isle of Nantes, France', 'lat' => 47.2066, 'lng' => -1.5644, 'words' => array('machines isle of nantes', 'machines of the isle of nantes', 'isle of nantes')),
+			array('label' => 'Riquewihr, France', 'lat' => 48.1663, 'lng' => 7.297, 'words' => array('riquewihr')),
+			array('label' => 'Carnac Stones, France', 'lat' => 47.596, 'lng' => -3.066, 'words' => array('carnac stones', 'morbihan and the carnac')),
+			array('label' => 'Colmar, France', 'lat' => 48.0794, 'lng' => 7.3585, 'words' => array('colmar christmas market', 'colmar')),
+			array('label' => 'Taennchel, France', 'lat' => 48.235, 'lng' => 7.254, 'words' => array('taennchel')),
+			array('label' => 'Cappadocia, Turkey', 'lat' => 38.6431, 'lng' => 34.8289, 'words' => array('cappadocia')),
+			array('label' => 'Camondo Stairs, Istanbul', 'lat' => 41.0243, 'lng' => 28.9755, 'words' => array('camondo stairs')),
+			array('label' => 'Guadeloupe, Caribbean', 'lat' => 16.265, 'lng' => -61.551, 'words' => array('shaped like a butterfly', 'french caribbean paradise', 'guadeloupe')),
+			array('label' => 'Sint Maarten, Caribbean', 'lat' => 18.0408, 'lng' => -63.1205, 'words' => array('sint maarten', 'planes nearly touch', 'maho beach')),
+			array('label' => 'Sark Island, Guernsey', 'lat' => 49.4306, 'lng' => -2.3656, 'words' => array('sark island')),
+			array('label' => 'Andorra', 'lat' => 42.5063, 'lng' => 1.5218, 'words' => array('why visit andorra', 'andorra')),
+			array('label' => 'Park of the Monsters, Bomarzo, Italy', 'lat' => 42.491, 'lng' => 12.247, 'words' => array('park of the monsters', 'bomarzo')),
+			array('label' => 'Dog Bark Park Inn, Idaho, USA', 'lat' => 46.049, 'lng' => -116.35, 'words' => array('beagle’s belly', "beagle's belly", 'dog bark park')),
+			array('label' => 'Abandoned Sinai Outdoor Cinema, Egypt', 'lat' => 27.91, 'lng' => 34.30, 'words' => array('outdoor movie theater of the sinai', 'sinai desert')),
+			array('label' => 'The Narrows, Zion National Park, USA', 'lat' => 37.2982, 'lng' => -112.9484, 'words' => array('the narrows', 'utah daredevil slot canyon')),
+			array('label' => "Cano's Castle, Colorado, USA", 'lat' => 37.079, 'lng' => -106.009, 'words' => array("cano's castle", 'canos castle')),
+			array('label' => 'Hot Springs National Park, USA', 'lat' => 34.521, 'lng' => -93.042, 'words' => array('hot springs national park')),
+			array('label' => 'Bruce Peninsula Grotto, Canada', 'lat' => 45.245, 'lng' => -81.524, 'words' => array('bruce peninsula', 'shimmering sea cave')),
+			array('label' => 'Savannah, Georgia, USA', 'lat' => 32.0809, 'lng' => -81.0912, 'words' => array('savannah', 'bonaventure', 'forrest gump')),
+			array('label' => 'Bonaventure Cemetery, Savannah, USA', 'lat' => 32.045, 'lng' => -81.0508, 'words' => array('bonaventure cemetery')),
+			array('label' => 'Atlanta, Georgia, USA', 'lat' => 33.749, 'lng' => -84.388, 'words' => array('atlanta')),
+			array('label' => 'Helen, Georgia, USA', 'lat' => 34.701, 'lng' => -83.731, 'words' => array('helen georgia', 'helen, georgia')),
+			array('label' => 'Anna Ruby Falls, Georgia, USA', 'lat' => 34.758, 'lng' => -83.709, 'words' => array('anna ruby falls')),
+			array('label' => 'Providence Canyon, Georgia, USA', 'lat' => 32.064, 'lng' => -84.922, 'words' => array('providence canyon')),
+			array('label' => 'Rock City, Georgia, USA', 'lat' => 34.973, 'lng' => -85.349, 'words' => array('rock city')),
+			array('label' => 'Little St. Simons Island, Georgia, USA', 'lat' => 31.279, 'lng' => -81.342, 'words' => array('little st. simons', 'little st simons')),
+			array('label' => 'Georgia Guidestones, USA', 'lat' => 34.111, 'lng' => -82.867, 'words' => array('georgia guidestones', 'guidestones')),
+		);
+	}
+
+	private function region_centers() {
+		return array(
+			'Georgia' => array(42.3154, 43.3569), 'Italy' => array(42.8333, 12.8333), 'France' => array(46.2276, 2.2137), 'UK' => array(54, -2),
+			'Spain' => array(40.4637, -3.7492), 'Germany' => array(51.1657, 10.4515), 'Iceland' => array(64.9631, -19.0208), 'Portugal' => array(39.3999, -8.2245),
+			'Norway' => array(60.472, 8.4689), 'Greece' => array(39.0742, 21.8243), 'Ireland' => array(53.1424, -7.6921), 'Turkey' => array(39.9334, 32.8597),
+			'Armenia' => array(40.0691, 45.0382), 'Azerbaijan' => array(40.1431, 47.5769), 'Japan' => array(36.2048, 138.2529), 'China' => array(35.8617, 104.1954),
+			'India' => array(20.5937, 78.9629), 'Thailand' => array(15.87, 100.9925), 'Indonesia' => array(-0.7893, 113.9213), 'Vietnam' => array(14.0583, 108.2772),
+			'Cambodia' => array(12.5657, 104.991), 'Australia' => array(-25.2744, 133.7751), 'New Zealand' => array(-40.9006, 174.886),
+			'Brazil' => array(-14.235, -51.9253), 'Argentina' => array(-38.4161, -63.6167), 'Chile' => array(-35.6751, -71.543), 'Peru' => array(-9.19, -75.0152),
+			'USA' => array(39.8283, -98.5795), 'California' => array(36.7783, -119.4179), 'Florida' => array(27.6648, -81.5158), 'Arizona' => array(34.0489, -111.0937),
+			'Texas' => array(31.9686, -99.9018), 'New York' => array(43.2994, -74.2179), 'Oregon' => array(43.8041, -120.5542), 'Nevada' => array(38.8026, -116.4194),
+			'Tennessee' => array(35.5175, -86.5804), 'Utah' => array(39.321, -111.0937), 'Alaska' => array(64.2008, -149.4937), 'Hawaii' => array(19.8968, -155.5828),
+			'Colorado' => array(39.5501, -105.7821), 'Washington' => array(47.7511, -120.7401), 'Pennsylvania' => array(41.2033, -77.1945), 'Ohio' => array(40.4173, -82.9071),
+			'Michigan' => array(44.3148, -85.6024), 'Illinois' => array(40.6331, -89.3985), 'North Carolina' => array(35.7596, -79.0193), 'South Carolina' => array(33.8361, -81.1637),
+			'Louisiana' => array(30.9843, -91.9623), 'New Mexico' => array(34.5199, -105.8701), 'Massachusetts' => array(42.4072, -71.3824), 'Virginia' => array(37.4316, -78.6569),
+			'Maryland' => array(39.0458, -76.6413), 'Maine' => array(45.2538, -69.4455), 'Montana' => array(46.8797, -110.3626), 'Wyoming' => array(43.076, -107.2903),
+			'Idaho' => array(44.0682, -114.742), 'Kansas' => array(39.0119, -98.4842), 'Missouri' => array(37.9643, -91.8318), 'Alabama' => array(32.3182, -86.9023),
+			'Kentucky' => array(37.8393, -84.27), 'Indiana' => array(40.2672, -86.1349), 'Wisconsin' => array(43.7844, -88.7879), 'Minnesota' => array(46.7296, -94.6859),
+		);
+	}
+
+	private function infer_coords($content_text, $categories, $tags) {
+		$text = strtolower(' ' . $content_text . ' ' . implode(' ', $categories) . ' ' . implode(' ', $tags) . ' ');
+		foreach ($this->location_dictionary() as $place) {
+			foreach ($place['words'] as $word) {
+				if ($this->keyword_score($text, $word) > 0) {
+					return array('lat' => (float) $place['lat'], 'lng' => (float) $place['lng'], 'label' => $place['label'], 'source' => 'inferred_place');
+				}
+			}
+		}
+
+		$regions = $this->regions($categories, $text);
+		$centers = $this->region_centers();
+		$has_usa = in_array('USA', $regions, true) || in_array('United States', $categories, true);
+		foreach ($regions as $region) {
+			if ('Georgia' === $region && $has_usa && !preg_match('/\b(tbilisi|vardzia|kazbegi|svaneti|tusheti|batumi|adjara|chiatura|mtskheta|gareja|uplistsikhe|khevsureti)\b/', $text)) {
+				continue;
+			}
+			if (isset($centers[$region])) {
+				return array('lat' => (float) $centers[$region][0], 'lng' => (float) $centers[$region][1], 'label' => $region, 'source' => 'inferred_region');
+			}
+		}
+		return null;
+	}
+
+	private function maybe_store_inferred_coords($post_id, $content_text, $categories, $tags) {
+		if ($this->exact_coords($post_id)) {
+			return;
+		}
+		$inferred = $this->infer_coords($content_text, $categories, $tags);
+		if (!$inferred) {
+			delete_post_meta($post_id, self::META_INFERRED_LAT);
+			delete_post_meta($post_id, self::META_INFERRED_LNG);
+			delete_post_meta($post_id, self::META_INFERRED_LABEL);
+			delete_post_meta($post_id, self::META_GEO_SOURCE);
+			return;
+		}
+		update_post_meta($post_id, self::META_INFERRED_LAT, (string) $inferred['lat']);
+		update_post_meta($post_id, self::META_INFERRED_LNG, (string) $inferred['lng']);
+		update_post_meta($post_id, self::META_INFERRED_LABEL, $inferred['label']);
+		update_post_meta($post_id, self::META_GEO_SOURCE, $inferred['source']);
+	}
+
+	private function store_inferred_classification($post_id, $content_text, $categories) {
+		$text = strtolower($content_text);
+		update_post_meta($post_id, self::META_MOODS, $this->moods($text));
+		update_post_meta($post_id, self::META_TYPE, $this->type($text));
+		update_post_meta($post_id, self::META_REGIONS, $this->regions($categories, $text));
+	}
+
+	private function exact_coords($post_id) {
 		$lat = get_post_meta($post_id, self::META_LAT, true);
 		$lng = get_post_meta($post_id, self::META_LNG, true);
 		if (!is_numeric($lat) || !is_numeric($lng)) {
@@ -214,85 +459,376 @@ final class UP_Strange_Place_Picker {
 				$lat = isset($meta['lat']) ? $meta['lat'] : $lat;
 				$lng = isset($meta['lng']) ? $meta['lng'] : $lng;
 			} elseif (is_string($meta) && '' !== $meta) {
-				if (preg_match('/s:3:"lat";[sd]:([0-9.\-]+)/', $meta, $match)) $lat = $match[1];
-				if (preg_match('/s:3:"lng";[sd]:([0-9.\-]+)/', $meta, $match)) $lng = $match[1];
-				if ((!is_numeric($lat) || !is_numeric($lng)) && preg_match('/(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)/', $meta, $match)) { $lat = $match[1]; $lng = $match[2]; }
+				if (preg_match('/s:3:"lat";[sd]:([0-9.\-]+)/', $meta, $match)) {
+					$lat = $match[1];
+				}
+				if (preg_match('/s:3:"lng";[sd]:([0-9.\-]+)/', $meta, $match)) {
+					$lng = $match[1];
+				}
+				if ((!is_numeric($lat) || !is_numeric($lng)) && preg_match('/(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)/', $meta, $match)) {
+					$lat = $match[1];
+					$lng = $match[2];
+				}
 			}
 		}
 		if (!is_numeric($lat) || !is_numeric($lng)) {
-			foreach (array('lat', 'latitude', '_lat', '_latitude', 'geo_latitude', 'geographic_latitude') as $key) { $value = get_post_meta($post_id, $key, true); if (is_numeric($value)) { $lat = $value; break; } }
-			foreach (array('lng', 'lon', 'longitude', '_lng', '_lon', '_longitude', 'geo_longitude', 'geographic_longitude') as $key) { $value = get_post_meta($post_id, $key, true); if (is_numeric($value)) { $lng = $value; break; } }
+			foreach (array('lat', 'latitude', '_lat', '_latitude', 'geo_latitude', 'geographic_latitude') as $key) {
+				$value = get_post_meta($post_id, $key, true);
+				if (is_numeric($value)) {
+					$lat = $value;
+					break;
+				}
+			}
+			foreach (array('lng', 'lon', 'longitude', '_lng', '_lon', '_longitude', 'geo_longitude', 'geographic_longitude') as $key) {
+				$value = get_post_meta($post_id, $key, true);
+				if (is_numeric($value)) {
+					$lng = $value;
+					break;
+				}
+			}
 		}
-		return is_numeric($lat) && is_numeric($lng) ? array('lat' => (float) $lat, 'lng' => (float) $lng) : null;
+		if (!is_numeric($lat) || !is_numeric($lng)) {
+			$all_meta = get_post_meta($post_id);
+			foreach ($all_meta as $values) {
+				foreach ((array) $values as $value) {
+					if (is_string($value) && preg_match('/(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)/', $value, $match)) {
+						$maybe_lat = (float) $match[1];
+						$maybe_lng = (float) $match[2];
+						if ($maybe_lat >= -90 && $maybe_lat <= 90 && $maybe_lng >= -180 && $maybe_lng <= 180) {
+							$lat = $maybe_lat;
+							$lng = $maybe_lng;
+							break 2;
+						}
+					}
+				}
+			}
+		}
+		if (!is_numeric($lat) || !is_numeric($lng)) {
+			return null;
+		}
+		$label = get_post_meta($post_id, self::META_LABEL, true);
+		return array('lat' => (float) $lat, 'lng' => (float) $lng, 'label' => $label, 'source' => 'exact');
+	}
+
+	private function coords($post_id) {
+		$exact = $this->exact_coords($post_id);
+		if ($exact) {
+			return $exact;
+		}
+		$lat = get_post_meta($post_id, self::META_INFERRED_LAT, true);
+		$lng = get_post_meta($post_id, self::META_INFERRED_LNG, true);
+		if (!is_numeric($lat) || !is_numeric($lng)) {
+			return null;
+		}
+		return array(
+			'lat' => (float) $lat,
+			'lng' => (float) $lng,
+			'label' => get_post_meta($post_id, self::META_INFERRED_LABEL, true),
+			'source' => get_post_meta($post_id, self::META_GEO_SOURCE, true) ?: 'inferred_region',
+		);
 	}
 
 	private function best_for($moods, $type) {
-		if (in_array('Creepy', $moods, true)) return 'curious travelers who like eerie stories';
-		if (in_array('Fairytale', $moods, true)) return 'slow wandering, photos, and storybook atmosphere';
-		if (in_array('Ancient', $moods, true)) return 'history lovers and archaeology-minded travelers';
-		if ('Natural wonder' === $type) return 'nature lovers and scenic detours';
+		if (in_array('Creepy', $moods, true)) {
+			return 'curious travelers who like eerie stories';
+		}
+		if (in_array('Fairytale', $moods, true)) {
+			return 'slow wandering, photos, and storybook atmosphere';
+		}
+		if (in_array('Ancient', $moods, true)) {
+			return 'history lovers and archaeology-minded travelers';
+		}
+		if ('Natural wonder' === $type) {
+			return 'nature lovers and scenic detours';
+		}
 		return 'a handpicked unusual travel idea';
 	}
 
 	public function get_index() {
 		$cached = get_transient(self::CACHE_KEY);
-		return is_array($cached) && !empty($cached['posts']) ? $cached : $this->rebuild_cache();
+		if (is_array($cached) && !empty($cached['posts'])) {
+			return $cached;
+		}
+		return $this->rebuild_cache();
 	}
 
 	public function rebuild_cache() {
-		$query = new WP_Query(array('post_type' => 'post', 'post_status' => 'publish', 'post_password' => '', 'posts_per_page' => 2000, 'orderby' => 'modified', 'order' => 'DESC', 'ignore_sticky_posts' => true, 'no_found_rows' => true));
-		$posts = array(); $region_counts = array(); $mood_counts = array();
+		$query = new WP_Query(array(
+			'post_type' => 'post',
+			'post_status' => 'publish',
+			'post_password' => '',
+			'posts_per_page' => 2000,
+			'orderby' => 'modified',
+			'order' => 'DESC',
+			'ignore_sticky_posts' => true,
+			'no_found_rows' => true,
+		));
+
+		$posts = array();
+		$region_counts = array();
+		$mood_counts = array();
 		$promo_pattern = '/\b(sponsored|promo|casino|insurance|car rental|rent a car|airbnb|vacation rental|loan|essay|write for us|guest post|coupon|discount|moving company|shipping|visa|travel tips|guide to choosing|best ways to|things to consider)\b/i';
 		$place_pattern = '/\b(castle|island|village|city|town|monastery|church|temple|ruins?|cave|bridge|road|lake|mountain|forest|park|museum|palace|tower|cemetery|tomb|monument|house|building|beach|desert|waterfall|cliff|valley|fortress|sanctuary|ghost town|abandoned|garden|statue|tunnel|railway|station|mine|volcano|rock|pyramid|cathedral|chapel|pillar)\b/i';
+
 		foreach ($query->posts as $post) {
 			$post_id = $post->ID;
-			$categories = $this->terms($post_id, 'category'); $tags = $this->terms($post_id, 'post_tag');
-			$content_text = wp_strip_all_tags($post->post_title . ' ' . $post->post_title . ' ' . $post->post_excerpt . ' ' . wp_trim_words($post->post_content, 260, '') . ' ' . implode(' ', $categories) . ' ' . implode(' ', $categories) . ' ' . implode(' ', $tags) . ' ' . implode(' ', $tags));
-			$text = strtolower($content_text); $non_generic_categories = array_diff($categories, array('Travel', 'Uncategorized'));
-			$travel_only = in_array('Travel', $categories, true) && empty($non_generic_categories); $is_promo = (bool) preg_match($promo_pattern, $content_text); $coords = $this->coords($post_id);
-			$score = 0; $score += has_post_thumbnail($post_id) ? 2 : 0; $score += $coords ? 5 : 0; $score += preg_match($place_pattern, $content_text) ? 3 : 0; $score += !empty($non_generic_categories) ? 2 : 0; $score += !empty($tags) ? 1 : 0; $score -= $travel_only ? 2 : 0; $score -= $is_promo ? 6 : 0;
-			if ($score < 4 || $is_promo) continue;
-			$moods = $this->moods($text); $type = $this->type($text); $regions = $this->regions($categories, $text); $excerpt = get_the_excerpt($post_id);
-			if ('' === $excerpt) $excerpt = wp_trim_words(wp_strip_all_tags($post->post_content), 24, '...');
-			foreach ($regions as $region) if ('Anywhere' !== $region) $region_counts[$region] = isset($region_counts[$region]) ? $region_counts[$region] + 1 : 1;
-			foreach ($moods as $mood) $mood_counts[$mood] = isset($mood_counts[$mood]) ? $mood_counts[$mood] + 1 : 1;
-			$posts[] = array('id' => $post_id, 'title' => get_the_title($post_id), 'url' => get_permalink($post_id), 'excerpt' => wp_trim_words($excerpt, 28, '...'), 'image' => get_the_post_thumbnail_url($post_id, 'large'), 'regions' => $regions, 'regionLabel' => $regions[0], 'moods' => $moods, 'moodLabel' => $moods[0], 'type' => $type, 'bestFor' => $this->best_for($moods, $type), 'lat' => $coords ? $coords['lat'] : null, 'lng' => $coords ? $coords['lng'] : null, 'placeLabel' => get_post_meta($post_id, self::META_LABEL, true), '_score' => $score);
+			$categories = $this->terms($post_id, 'category');
+			$tags = $this->terms($post_id, 'post_tag');
+			$content_text = $this->context_text($post, $categories, $tags);
+			$text = strtolower($content_text);
+			$non_generic_categories = array_diff($categories, array('Travel', 'Uncategorized'));
+			$travel_only = in_array('Travel', $categories, true) && empty($non_generic_categories);
+			$is_promo = (bool) preg_match($promo_pattern, $content_text);
+			$this->maybe_store_inferred_coords($post_id, $content_text, $categories, $tags);
+			$this->store_inferred_classification($post_id, $content_text, $categories);
+			$coords = $this->coords($post_id);
+			$score = 0;
+			$score += has_post_thumbnail($post_id) ? 2 : 0;
+			$score += $coords ? 5 : 0;
+			$score += preg_match($place_pattern, $content_text) ? 3 : 0;
+			$score += !empty($non_generic_categories) ? 2 : 0;
+			$score += !empty($tags) ? 1 : 0;
+			$score -= $travel_only ? 2 : 0;
+			$score -= $is_promo ? 6 : 0;
+
+			if ($score < 4 || $is_promo) {
+				continue;
+			}
+
+			$moods = $this->moods($text);
+			$type = $this->type($text);
+			$regions = $this->regions($categories, $text);
+			$excerpt = get_the_excerpt($post_id);
+			if ('' === $excerpt) {
+				$excerpt = wp_trim_words(wp_strip_all_tags($post->post_content), 24, '...');
+			}
+
+			foreach ($regions as $region) {
+				if ('Anywhere' !== $region) {
+					$region_counts[$region] = isset($region_counts[$region]) ? $region_counts[$region] + 1 : 1;
+				}
+			}
+			foreach ($moods as $mood) {
+				$mood_counts[$mood] = isset($mood_counts[$mood]) ? $mood_counts[$mood] + 1 : 1;
+			}
+
+			$posts[] = array(
+				'id' => $post_id,
+				'title' => get_the_title($post_id),
+				'url' => get_permalink($post_id),
+				'excerpt' => wp_trim_words($excerpt, 28, '...'),
+				'image' => get_the_post_thumbnail_url($post_id, 'large'),
+				'regions' => $regions,
+				'regionLabel' => $regions[0],
+				'moods' => $moods,
+				'moodLabel' => $moods[0],
+				'type' => $type,
+				'bestFor' => $this->best_for($moods, $type),
+				'lat' => $coords ? $coords['lat'] : null,
+				'lng' => $coords ? $coords['lng'] : null,
+				'placeLabel' => $coords && !empty($coords['label']) ? $coords['label'] : '',
+				'geoSource' => $coords && !empty($coords['source']) ? $coords['source'] : '',
+				'_score' => $score,
+			);
 		}
 		wp_reset_postdata();
-		usort($posts, function($a, $b) { if (($a['lat'] !== null) !== ($b['lat'] !== null)) return $a['lat'] !== null ? -1 : 1; return $b['_score'] <=> $a['_score']; });
-		$posts = array_slice($posts, 0, 1200); foreach ($posts as &$post) unset($post['_score']); unset($post);
-		$data = array('posts' => $posts, 'regionGroups' => $this->region_groups($region_counts), 'moods' => array('Any', 'Beautiful', 'Creepy', 'Forgotten', 'Fairytale', 'Movie-like', 'Ancient', 'Abandoned', 'Roadside weird', 'Peaceful but strange'), 'coordinateCount' => count(array_filter($posts, function($post) { return null !== $post['lat'] && null !== $post['lng']; })), 'moodCounts' => $mood_counts, 'regionCounts' => $region_counts, 'builtAt' => current_time('mysql'), 'version' => self::VERSION);
-		set_transient(self::CACHE_KEY, $data, 35 * DAY_IN_SECONDS); update_option('up_spp_last_rebuild', current_time('mysql'), false); return $data;
+
+		usort($posts, function($a, $b) {
+			if (($a['lat'] !== null) !== ($b['lat'] !== null)) {
+				return $a['lat'] !== null ? -1 : 1;
+			}
+			return $b['_score'] <=> $a['_score'];
+		});
+		$posts = array_slice($posts, 0, 1200);
+		foreach ($posts as &$post) {
+			unset($post['_score']);
+		}
+		unset($post);
+
+		$data = array(
+			'posts' => $posts,
+			'regionGroups' => $this->region_groups($region_counts),
+			'moods' => array('Any', 'Beautiful', 'Creepy', 'Forgotten', 'Fairytale', 'Movie-like', 'Ancient', 'Abandoned', 'Roadside weird', 'Peaceful but strange'),
+			'coordinateCount' => count(array_filter($posts, function($post) {
+				return null !== $post['lat'] && null !== $post['lng'];
+			})),
+			'exactCoordinateCount' => count(array_filter($posts, function($post) {
+				return 'exact' === $post['geoSource'];
+			})),
+			'inferredCoordinateCount' => count(array_filter($posts, function($post) {
+				return isset($post['geoSource']) && 0 === strpos($post['geoSource'], 'inferred_');
+			})),
+			'moodCounts' => $mood_counts,
+			'regionCounts' => $region_counts,
+			'builtAt' => current_time('mysql'),
+			'version' => self::VERSION,
+		);
+
+		set_transient(self::CACHE_KEY, $data, 35 * DAY_IN_SECONDS);
+		update_option('up_spp_last_rebuild', current_time('mysql'), false);
+		return $data;
 	}
 
 	private function region_groups($region_counts) {
-		$country_groups = array('USA' => array('California','Florida','Arizona','Texas','New York','Oregon','Nevada','Tennessee','Utah','Alaska','Hawaii','Colorado','Washington','Pennsylvania','Ohio','Michigan','Illinois','North Carolina','South Carolina','Louisiana','New Mexico','Massachusetts','Virginia','Maryland','Maine','Montana','Wyoming','Idaho','Kansas','Missouri','Alabama','Kentucky','Indiana','Wisconsin','Minnesota','Georgia'), 'Europe' => array('Italy','France','UK','Spain','Germany','Georgia','Iceland','Portugal','Norway','Greece','Ireland','Netherlands','Croatia','Sweden','Poland','Switzerland','Austria','Denmark','Serbia','Russia','Turkey','Scotland','England','Wales','Belgium','Czech Republic','Romania','Bulgaria','Hungary','Slovenia','Slovakia','Finland','Estonia','Latvia','Lithuania','Ukraine','Armenia','Azerbaijan','Malta','Cyprus'), 'Asia' => array('Japan','China','India','Thailand','Indonesia','Vietnam','Cambodia','Malaysia','Singapore','Philippines','South Korea','Sri Lanka','Nepal','Taiwan','Hong Kong','Mongolia','Kazakhstan','Uzbekistan','Kyrgyzstan','Laos','Myanmar','Turkey','Armenia','Azerbaijan','Georgia'), 'Australia' => array('Australia','New Zealand'), 'South America' => array('Brazil','Argentina','Chile','Peru','Bolivia','Colombia','Guyana','Uruguay','Ecuador','Venezuela','Paraguay','Suriname'));
-		$groups = array('Anywhere' => array('label'=>'Anywhere','region'=>'Anywhere','countries'=>array()), 'USA' => array('label'=>'USA','region'=>'USA','countries'=>array()), 'Europe' => array('label'=>'Europe','region'=>'Europe','countries'=>array()), 'Asia' => array('label'=>'Asia','region'=>'Asia','countries'=>array()), 'Australia' => array('label'=>'Australia','region'=>'Australia','countries'=>array()), 'South America' => array('label'=>'South America','region'=>'South America','countries'=>array()));
-		foreach ($country_groups as $group => $countries) foreach ($countries as $country) if (isset($region_counts[$country]) && !in_array($country, $groups[$group]['countries'], true)) $groups[$group]['countries'][] = $country;
-		foreach (array('Europe'=>array('Italy','France','UK','Georgia'), 'USA'=>array('California','Florida','Arizona','Texas','New York'), 'Asia'=>array('Japan','China','India','Thailand'), 'Australia'=>array('Australia'), 'South America'=>array('Brazil','Argentina','Chile')) as $group => $fallback) if (empty($groups[$group]['countries'])) $groups[$group]['countries'] = $fallback;
+		$country_groups = array(
+			'USA' => array('California', 'Florida', 'Arizona', 'Texas', 'New York', 'Oregon', 'Nevada', 'Tennessee', 'Utah', 'Alaska', 'Hawaii', 'Colorado', 'Washington', 'Pennsylvania', 'Ohio', 'Michigan', 'Illinois', 'North Carolina', 'South Carolina', 'Louisiana', 'New Mexico', 'Massachusetts', 'Virginia', 'Maryland', 'Maine', 'Montana', 'Wyoming', 'Idaho', 'Kansas', 'Missouri', 'Alabama', 'Kentucky', 'Indiana', 'Wisconsin', 'Minnesota', 'Georgia'),
+			'Europe' => array('Italy', 'France', 'UK', 'Spain', 'Germany', 'Georgia', 'Iceland', 'Portugal', 'Norway', 'Greece', 'Ireland', 'Netherlands', 'Croatia', 'Sweden', 'Poland', 'Switzerland', 'Austria', 'Denmark', 'Serbia', 'Russia', 'Turkey', 'Scotland', 'England', 'Wales', 'Belgium', 'Czech Republic', 'Romania', 'Bulgaria', 'Hungary', 'Slovenia', 'Slovakia', 'Finland', 'Estonia', 'Latvia', 'Lithuania', 'Ukraine', 'Armenia', 'Azerbaijan', 'Malta', 'Cyprus'),
+			'Asia' => array('Japan', 'China', 'India', 'Thailand', 'Indonesia', 'Vietnam', 'Cambodia', 'Malaysia', 'Singapore', 'Philippines', 'South Korea', 'Sri Lanka', 'Nepal', 'Taiwan', 'Hong Kong', 'Mongolia', 'Kazakhstan', 'Uzbekistan', 'Kyrgyzstan', 'Laos', 'Myanmar', 'Turkey', 'Armenia', 'Azerbaijan', 'Georgia'),
+			'Australia' => array('Australia', 'New Zealand'),
+			'South America' => array('Brazil', 'Argentina', 'Chile', 'Peru', 'Bolivia', 'Colombia', 'Guyana', 'Uruguay', 'Ecuador', 'Venezuela', 'Paraguay', 'Suriname'),
+		);
+		$groups = array(
+			'Anywhere' => array('label' => 'Anywhere', 'region' => 'Anywhere', 'countries' => array()),
+			'USA' => array('label' => 'USA', 'region' => 'USA', 'countries' => array()),
+			'Europe' => array('label' => 'Europe', 'region' => 'Europe', 'countries' => array()),
+			'Asia' => array('label' => 'Asia', 'region' => 'Asia', 'countries' => array()),
+			'Australia' => array('label' => 'Australia', 'region' => 'Australia', 'countries' => array()),
+			'South America' => array('label' => 'South America', 'region' => 'South America', 'countries' => array()),
+		);
+		foreach ($country_groups as $group => $countries) {
+			foreach ($countries as $country) {
+				if (isset($region_counts[$country]) && !in_array($country, $groups[$group]['countries'], true)) {
+					$groups[$group]['countries'][] = $country;
+				}
+			}
+		}
+		foreach (array('Europe' => array('Italy', 'France', 'UK', 'Georgia'), 'USA' => array('California', 'Florida', 'Arizona', 'Texas', 'New York'), 'Asia' => array('Japan', 'China', 'India', 'Thailand'), 'Australia' => array('Australia'), 'South America' => array('Brazil', 'Argentina', 'Chile')) as $group => $fallback) {
+			if (empty($groups[$group]['countries'])) {
+				$groups[$group]['countries'] = $fallback;
+			}
+		}
 		return $groups;
 	}
 
-	public function clear_cache_on_post_save($post_id, $post, $update) { if (!wp_is_post_revision($post_id) && !wp_is_post_autosave($post_id)) delete_transient(self::CACHE_KEY); }
-	public function admin_menu() { add_options_page('Unusual Places Explorer', 'Unusual Places Explorer', 'manage_options', 'up-strange-place-picker', array($this, 'admin_page')); }
+	public function clear_cache_on_post_save($post_id, $post, $update) {
+		if (wp_is_post_revision($post_id) || wp_is_post_autosave($post_id)) {
+			return;
+		}
+		if ($post && 'publish' === $post->post_status) {
+			$categories = $this->terms($post_id, 'category');
+			$tags = $this->terms($post_id, 'post_tag');
+			$content_text = $this->context_text($post, $categories, $tags);
+			$this->maybe_store_inferred_coords($post_id, $content_text, $categories, $tags);
+			$this->store_inferred_classification($post_id, $content_text, $categories);
+		}
+		delete_transient(self::CACHE_KEY);
+	}
+
+	public function admin_menu() {
+		add_options_page('Unusual Places Explorer', 'Unusual Places Explorer', 'manage_options', 'up-strange-place-picker', array($this, 'admin_page'));
+	}
+
 	public function admin_page() {
-		if (!current_user_can('manage_options')) return;
-		if (isset($_POST['up_spp_rebuild']) && check_admin_referer('up_spp_rebuild')) { $this->rebuild_cache(); echo '<div class="updated"><p>Strange Place Picker cache rebuilt.</p></div>'; }
+		if (!current_user_can('manage_options')) {
+			return;
+		}
+		if (isset($_POST['up_spp_rebuild']) && check_admin_referer('up_spp_rebuild')) {
+			$this->rebuild_cache();
+			echo '<div class="updated"><p>Strange Place Picker cache rebuilt.</p></div>';
+		}
 		$data = $this->get_index();
 		?>
-		<div class="wrap"><h1>Unusual Places Explorer</h1><p>Shortcode: <code>[up_strange_place_picker]</code></p><form method="post"><?php wp_nonce_field('up_spp_rebuild'); ?><p><button class="button button-primary" name="up_spp_rebuild" value="1">Rebuild picker cache now</button></p></form><h2>Index Status</h2><table class="widefat striped" style="max-width:760px"><tbody><tr><th>Indexed posts</th><td><?php echo esc_html(count($data['posts'])); ?></td></tr><tr><th>Posts with exact coordinates</th><td><?php echo esc_html($data['coordinateCount']); ?></td></tr><tr><th>Last rebuilt</th><td><?php echo esc_html(isset($data['builtAt']) ? $data['builtAt'] : get_option('up_spp_last_rebuild', 'Never')); ?></td></tr></tbody></table><h2>Mood Coverage</h2><table class="widefat striped" style="max-width:760px"><tbody><?php foreach ($data['moods'] as $mood) : if ('Any' === $mood) continue; ?><tr><th><?php echo esc_html($mood); ?></th><td><?php echo esc_html(isset($data['moodCounts'][$mood]) ? $data['moodCounts'][$mood] : 0); ?></td></tr><?php endforeach; ?></tbody></table><p>Add exact coordinates on the post edit screen in the “Strange Place Picker Coordinates” box. Exact coordinates make mobile nearby search much better than inferred locations.</p></div>
+		<div class="wrap">
+			<h1>Unusual Places Explorer</h1>
+			<p>Shortcode: <code>[up_strange_place_picker]</code></p>
+			<form method="post">
+				<?php wp_nonce_field('up_spp_rebuild'); ?>
+				<p><button class="button button-primary" name="up_spp_rebuild" value="1">Rebuild picker cache now</button></p>
+			</form>
+			<h2>Index Status</h2>
+			<table class="widefat striped" style="max-width:760px">
+				<tbody>
+					<tr><th>Indexed posts</th><td><?php echo esc_html(count($data['posts'])); ?></td></tr>
+					<tr><th>Posts with coordinates</th><td><?php echo esc_html($data['coordinateCount']); ?></td></tr>
+					<tr><th>Exact manual coordinates</th><td><?php echo esc_html(isset($data['exactCoordinateCount']) ? $data['exactCoordinateCount'] : 0); ?></td></tr>
+					<tr><th>Inferred coordinates</th><td><?php echo esc_html(isset($data['inferredCoordinateCount']) ? $data['inferredCoordinateCount'] : 0); ?></td></tr>
+					<tr><th>Last rebuilt</th><td><?php echo esc_html(isset($data['builtAt']) ? $data['builtAt'] : get_option('up_spp_last_rebuild', 'Never')); ?></td></tr>
+					<tr><th>Next monthly rebuild</th><td><?php $next = wp_next_scheduled(self::CRON_HOOK); echo esc_html($next ? date_i18n(get_option('date_format') . ' ' . get_option('time_format'), $next) : 'Not scheduled'); ?></td></tr>
+				</tbody>
+			</table>
+			<h2>Mood Coverage</h2>
+			<table class="widefat striped" style="max-width:760px">
+				<tbody>
+					<?php foreach ($data['moods'] as $mood) : if ('Any' === $mood) { continue; } ?>
+						<tr><th><?php echo esc_html($mood); ?></th><td><?php echo esc_html(isset($data['moodCounts'][$mood]) ? $data['moodCounts'][$mood] : 0); ?></td></tr>
+					<?php endforeach; ?>
+				</tbody>
+			</table>
+			<p>The plugin now stores approximate coordinates from article context during cache rebuilds and post saves. Add exact coordinates on the post edit screen when you want to override the inferred location.</p>
+		</div>
 		<?php
 	}
-	public function add_meta_boxes() { add_meta_box('up-spp-coordinates', 'Strange Place Picker Coordinates', array($this, 'render_meta_box'), 'post', 'side', 'default'); }
-	public function render_meta_box($post) { wp_nonce_field('up_spp_save_place_meta', 'up_spp_place_meta_nonce'); $lat = get_post_meta($post->ID, self::META_LAT, true); $lng = get_post_meta($post->ID, self::META_LNG, true); $label = get_post_meta($post->ID, self::META_LABEL, true); ?><p><label for="up_spp_place_label">Place label</label><br><input id="up_spp_place_label" name="up_spp_place_label" type="text" value="<?php echo esc_attr($label); ?>" class="widefat" placeholder="Vardzia, Georgia"></p><p><label for="up_spp_lat">Latitude</label><br><input id="up_spp_lat" name="up_spp_lat" type="text" value="<?php echo esc_attr($lat); ?>" class="widefat" placeholder="41.381"></p><p><label for="up_spp_lng">Longitude</label><br><input id="up_spp_lng" name="up_spp_lng" type="text" value="<?php echo esc_attr($lng); ?>" class="widefat" placeholder="43.284"></p><p class="description">Used only for sorting visitor-side nearby results. Visitor locations are not saved.</p><?php }
+
+	public function add_meta_boxes() {
+		add_meta_box('up-spp-coordinates', 'Strange Place Picker Coordinates', array($this, 'render_meta_box'), 'post', 'side', 'default');
+	}
+
+	public function render_meta_box($post) {
+		wp_nonce_field('up_spp_save_place_meta', 'up_spp_place_meta_nonce');
+		$lat = get_post_meta($post->ID, self::META_LAT, true);
+		$lng = get_post_meta($post->ID, self::META_LNG, true);
+		$label = get_post_meta($post->ID, self::META_LABEL, true);
+		$inferred_lat = get_post_meta($post->ID, self::META_INFERRED_LAT, true);
+		$inferred_lng = get_post_meta($post->ID, self::META_INFERRED_LNG, true);
+		$inferred_label = get_post_meta($post->ID, self::META_INFERRED_LABEL, true);
+		$geo_source = get_post_meta($post->ID, self::META_GEO_SOURCE, true);
+		$inferred_moods = get_post_meta($post->ID, self::META_MOODS, true);
+		$inferred_regions = get_post_meta($post->ID, self::META_REGIONS, true);
+		$inferred_type = get_post_meta($post->ID, self::META_TYPE, true);
+		?>
+		<p><label for="up_spp_place_label">Place label</label><br><input id="up_spp_place_label" name="up_spp_place_label" type="text" value="<?php echo esc_attr($label); ?>" class="widefat" placeholder="Vardzia, Georgia"></p>
+		<p><label for="up_spp_lat">Latitude</label><br><input id="up_spp_lat" name="up_spp_lat" type="text" value="<?php echo esc_attr($lat); ?>" class="widefat" placeholder="41.381"></p>
+		<p><label for="up_spp_lng">Longitude</label><br><input id="up_spp_lng" name="up_spp_lng" type="text" value="<?php echo esc_attr($lng); ?>" class="widefat" placeholder="43.284"></p>
+		<?php if (is_numeric($inferred_lat) && is_numeric($inferred_lng)) : ?>
+			<hr>
+			<p><strong>Inferred fallback</strong><br><?php echo esc_html($inferred_label ? $inferred_label : 'Approximate article location'); ?><br><code><?php echo esc_html($inferred_lat); ?>, <?php echo esc_html($inferred_lng); ?></code><br><span class="description"><?php echo esc_html($geo_source ? $geo_source : 'inferred'); ?></span></p>
+		<?php endif; ?>
+		<?php if (!empty($inferred_moods) || !empty($inferred_regions) || !empty($inferred_type)) : ?>
+			<p><strong>Picker classification</strong><br>
+				<?php if (!empty($inferred_moods) && is_array($inferred_moods)) : ?>Moods: <?php echo esc_html(implode(', ', $inferred_moods)); ?><br><?php endif; ?>
+				<?php if (!empty($inferred_regions) && is_array($inferred_regions)) : ?>Regions: <?php echo esc_html(implode(', ', $inferred_regions)); ?><br><?php endif; ?>
+				<?php if (!empty($inferred_type)) : ?>Type: <?php echo esc_html($inferred_type); ?><?php endif; ?>
+			</p>
+		<?php endif; ?>
+		<p class="description">Exact coordinates override inferred ones. Visitor locations stay in the browser and are not saved.</p>
+		<?php
+	}
+
 	public function save_place_meta($post_id, $post) {
-		if (!isset($_POST['up_spp_place_meta_nonce']) || !wp_verify_nonce(sanitize_text_field(wp_unslash($_POST['up_spp_place_meta_nonce'])), 'up_spp_save_place_meta') || !current_user_can('edit_post', $post_id)) return;
-		foreach (array(self::META_LAT => 'up_spp_lat', self::META_LNG => 'up_spp_lng') as $meta_key => $field) { $value = isset($_POST[$field]) ? trim(sanitize_text_field(wp_unslash($_POST[$field]))) : ''; if ('' === $value) delete_post_meta($post_id, $meta_key); elseif (is_numeric($value)) update_post_meta($post_id, $meta_key, (string) (float) $value); }
-		$label = isset($_POST['up_spp_place_label']) ? sanitize_text_field(wp_unslash($_POST['up_spp_place_label'])) : ''; if ('' === $label) delete_post_meta($post_id, self::META_LABEL); else update_post_meta($post_id, self::META_LABEL, $label); delete_transient(self::CACHE_KEY);
+		if (!isset($_POST['up_spp_place_meta_nonce']) || !wp_verify_nonce(sanitize_text_field(wp_unslash($_POST['up_spp_place_meta_nonce'])), 'up_spp_save_place_meta')) {
+			return;
+		}
+		if (!current_user_can('edit_post', $post_id)) {
+			return;
+		}
+		foreach (array(self::META_LAT => 'up_spp_lat', self::META_LNG => 'up_spp_lng') as $meta_key => $field) {
+			$value = isset($_POST[$field]) ? trim(sanitize_text_field(wp_unslash($_POST[$field]))) : '';
+			if ('' === $value) {
+				delete_post_meta($post_id, $meta_key);
+			} elseif (is_numeric($value)) {
+				update_post_meta($post_id, $meta_key, (string) (float) $value);
+			}
+		}
+		$label = isset($_POST['up_spp_place_label']) ? sanitize_text_field(wp_unslash($_POST['up_spp_place_label'])) : '';
+		if ('' === $label) {
+			delete_post_meta($post_id, self::META_LABEL);
+		} else {
+			update_post_meta($post_id, self::META_LABEL, $label);
+		}
+		delete_transient(self::CACHE_KEY);
 	}
 }
 
-add_filter('cron_schedules', function($schedules) { if (!isset($schedules['monthly'])) $schedules['monthly'] = array('interval' => 30 * DAY_IN_SECONDS, 'display' => 'Once Monthly'); return $schedules; });
+add_filter('cron_schedules', function($schedules) {
+	if (!isset($schedules['monthly'])) {
+		$schedules['monthly'] = array(
+			'interval' => 30 * DAY_IN_SECONDS,
+			'display' => 'Once Monthly',
+		);
+	}
+	return $schedules;
+});
+
 register_activation_hook(__FILE__, array('UP_Strange_Place_Picker', 'activate'));
 register_deactivation_hook(__FILE__, array('UP_Strange_Place_Picker', 'deactivate'));
 UP_Strange_Place_Picker::instance();

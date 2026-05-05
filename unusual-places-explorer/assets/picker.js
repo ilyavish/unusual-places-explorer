@@ -86,6 +86,9 @@
 					state.exactDistanceCache[post.id] = distanceKm(state.lat, state.lng, post.lat, post.lng);
 				}
 				copy.distance = state.exactDistanceCache[post.id];
+				if (post.geoSource && post.geoSource.indexOf('inferred_') === 0) {
+					copy.locationNote = 'Roughly ' + Math.round(copy.distance) + ' km from you, estimated from ' + (post.placeLabel || post.regionLabel || 'the article location') + '.';
+				}
 				return copy;
 			}).filter(function(post) {
 				return post.distance <= state.radiusKm;
@@ -111,7 +114,7 @@
 			{ label: 'Gergeti Trinity Church, Georgia', lat: 42.6629, lng: 44.6206, words: ['gergeti', 'trinity church', 'kazbegi', 'stepantsminda'] },
 			{ label: 'Tusheti, Georgia', lat: 42.37, lng: 45.63, words: ['tusheti', 'omalo', 'road to tusheti'] },
 			{ label: 'Svaneti, Georgia', lat: 43.043, lng: 42.729, words: ['svaneti', 'mestia', 'ushguli'] },
-			{ label: 'Uplistsikhe, Georgia', lat: 41.967, lng: 44.207, words: ['uplistsikhe'] },
+			{ label: 'Uplistsikhe, Georgia', lat: 41.967493, lng: 44.20758, words: ['uplistsikhe', 'uplistkhe', 'uplisziche'] },
 			{ label: 'Khevsureti, Georgia', lat: 42.52, lng: 44.93, words: ['khevsureti'] },
 			{ label: 'Anatori, Georgia', lat: 42.63, lng: 45.16, words: ['anatori'] },
 			{ label: 'Batumi, Georgia', lat: 41.6168, lng: 41.6367, words: ['batumi', 'adjara coastline', 'sea slippers'] },
@@ -120,6 +123,7 @@
 			{ label: 'Chiatura, Georgia', lat: 42.289, lng: 43.281, words: ['chiatura'] },
 			{ label: 'Mtskheta, Georgia', lat: 41.845, lng: 44.718, words: ['mtskheta'] },
 			{ label: 'David Gareja, Georgia', lat: 41.447, lng: 45.376, words: ['david gareja', 'gareja'] },
+			{ label: 'Saint-Cado Islet, France', lat: 47.68762, lng: -3.18483, words: ['saint-cado', 'saint cado', 'nichtarguer', 'nichtarguér', 'belz'] },
 			{ label: 'Savannah, Georgia, USA', lat: 32.0809, lng: -81.0912, words: ['savannah', 'bonaventure', 'forrest gump'] },
 			{ label: 'Atlanta, Georgia, USA', lat: 33.749, lng: -84.388, words: ['atlanta'] },
 			{ label: 'Helen, Georgia, USA', lat: 34.701, lng: -83.731, words: ['helen georgia', 'helen, georgia'] },
@@ -245,7 +249,7 @@
 		function renderPost(post) {
 			if (!post) return;
 			state.lastId = post.id;
-			var distance = typeof post.distance === 'number' ? '<p class="up-spp__distance">About ' + Math.round(post.distance) + ' km from you.</p>' : (post.locationNote ? '<p class="up-spp__distance">' + esc(post.locationNote) + '</p>' : '');
+			var distance = post.locationNote ? '<p class="up-spp__distance">' + esc(post.locationNote) + '</p>' : (typeof post.distance === 'number' ? '<p class="up-spp__distance">About ' + Math.round(post.distance) + ' km from you.</p>' : '');
 			var related = relatedPosts(post).map(function(item) {
 				return '<article class="up-spp__mini">' + imageHtml(item, false) + '<div class="up-spp__mini-body"><p class="up-spp__mini-title"><a href="' + esc(item.url) + '">' + esc(item.title) + '</a></p><p class="up-spp__mini-meta">' + esc(item.regionLabel) + ' · ' + esc(displayMood(item)) + '</p></div></article>';
 			}).join('');
