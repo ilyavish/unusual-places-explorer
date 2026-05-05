@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.1.1 - 2026-05-05
+
+- Add article/place-specific coordinate inference for Saint-Cado, Uplistsikhe, Georgia articles, France articles, and other common archive places.
+- Force a fresh picker cache so old broad country-center coordinates are replaced on rebuild.
+- Improve nearby sorting by preferring named place matches before region or country centers.
+
 ## 1.1.0 - 2026-05-05
 
 - Store inferred moods, regions, type, and approximate article coordinates during cache rebuilds and post saves.
