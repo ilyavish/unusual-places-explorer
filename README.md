@@ -32,6 +32,15 @@ It rebuilds the picker index:
 
 No XML dump is needed after the plugin is installed.
 
+During rebuilds and post saves, the plugin also stores inferred picker metadata on each post:
+
+- moods,
+- regions,
+- type,
+- approximate article coordinates when exact coordinates are missing.
+
+Exact coordinates entered in the post editor always override inferred coordinates.
+
 ## Mobile Location Notes
 
 Visitor coordinates stay client-side in the browser. The plugin does not save visitor location, use cookies, or call third-party APIs.
@@ -42,4 +51,4 @@ For best nearby results, add exact article coordinates in the post editor box:
 - Latitude
 - Longitude
 
-Exact coordinates are much better than inferred article locations, especially on mobile.
+The plugin can infer approximate article locations from titles, categories, tags, and known place clues, but exact coordinates are still better for precise nearby sorting.
