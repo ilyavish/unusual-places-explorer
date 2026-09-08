@@ -14,6 +14,11 @@
 
 		var posts = Array.isArray(data.posts) ? data.posts : [];
 		var regionGroups = data.regionGroups || {};
+		var indexUrl = root.getAttribute('data-up-spp-index-url') || '';
+		var indexReady = !data.partial;
+		var indexPromise = Promise.resolve();
+		var indexLoadFailed = false;
+		var pendingChoice = 0;
 		var state = { mood: 'Any', region: 'Anywhere', lat: null, lng: null, locationMode: false, lastId: null, radiusKm: 250, shownLocationIds: [], detectedCountry: '', detectedBroad: '', distanceCacheKey: '', exactDistanceCache: {}, approxCache: {} };
 		var statusEl = root.querySelector('[data-up-spp-status]');
 		var resultsEl = root.querySelector('[data-up-spp-results]');
@@ -259,7 +264,21 @@
 			resultsEl.innerHTML = '<article class="up-spp__card up-spp__card--main">' + imageHtml(post, true) + '<div class="up-spp__card-body"><p class="up-spp__meta">' + esc(post.regionLabel) + ' · ' + esc(displayMood(post)) + ' · ' + esc(post.type) + '</p><h3><a href="' + esc(post.url) + '">' + esc(post.title) + '</a></h3>' + distance + '<p>' + esc(post.excerpt) + '</p><p class="up-spp__best">Best for ' + esc(post.bestFor) + '.</p><div class="up-spp__actions"><a class="up-spp__read" href="' + esc(post.url) + '">Read the full article</a><button type="button" class="up-spp__another" data-up-spp-another>Show me another</button></div></div></article>' + (related ? '<div class="up-spp__related"><h3>Related unusual places</h3><div class="up-spp__related-grid">' + related + '</div></div>' : '');
 			if (!state.locationMode) setStatus('');
 		}
-		function choose(showAnother) { renderPost(pickPost(!!showAnother)); }
+		function choose(showAnother) {
+			var choiceId = ++pendingChoice;
+			if (!indexReady) {
+				setStatus('Loading the unusual places archive...');
+				indexPromise.then(function() {
+					if (choiceId !== pendingChoice) return;
+					if (state.locationMode && !indexLoadFailed) {
+						setStatus('Location on' + (state.detectedCountry ? ' in ' + state.detectedCountry : '') + '. Searching within ' + state.radiusKm + ' km first.');
+					}
+					renderPost(pickPost(!!showAnother));
+				});
+				return;
+			}
+			renderPost(pickPost(!!showAnother));
+		}
 		function activate(selector, attr, value) {
 			root.querySelectorAll(selector).forEach(function(item) {
 				var active = item.getAttribute(attr) === value;
@@ -382,6 +401,26 @@
 			root.querySelectorAll('[data-up-spp-radius-preset]').forEach(function(button) {
 				button.classList.toggle('is-active', Number(button.getAttribute('data-up-spp-radius-preset')) === state.radiusKm);
 			});
+		}
+
+		if (!indexReady && indexUrl && window.fetch) {
+			indexPromise = window.fetch(indexUrl, { credentials: 'same-origin', headers: { Accept: 'application/json' } })
+				.then(function(response) {
+					if (!response.ok) throw new Error('Index request failed');
+					return response.json();
+				})
+				.then(function(fullData) {
+					if (Array.isArray(fullData.posts) && fullData.posts.length) posts = fullData.posts;
+					if (fullData.regionGroups) regionGroups = fullData.regionGroups;
+					indexReady = true;
+				})
+				.catch(function() {
+					indexLoadFailed = true;
+					indexReady = true;
+					setStatus('The full archive could not be loaded. Showing a smaller selection for now.');
+				});
+		} else {
+			indexReady = true;
 		}
 
 		updateRadiusLabel();

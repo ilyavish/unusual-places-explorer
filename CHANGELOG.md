@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.2.0 - 2026-09-08
+
+- Add Explorer Record Type and per-post Picker Inclusion controls.
+- Add configurable excluded categories with explicit per-post Include override.
+- Add manual Place Type override plus Cost, Opening Status, Dog Friendly, Environment, and Last Verified fields.
+- Expose structured place data in the cached index while preserving the existing fields and shortcode.
+- Reduce shortcode HTML from the full 1,200-record payload to a 20-record fallback and load the full index through a cacheable REST endpoint.
+- Keep the previous cache available after post saves and schedule a background rebuild instead of rebuilding on the next visitor request.
+- Avoid unnecessary inferred-meta writes when values have not changed.
+
 ## 1.1.2 - 2026-05-05
 
 - Add named coordinates for St. Roch Cemetery Chapel in New Orleans.

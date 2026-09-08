@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Unusual Places Explorer
  * Description: Adds The Strange Place Picker shortcode for discovering published unusualplaces.org articles.
- * Version: 1.1.2
+ * Version: 1.2.0
  * Author: Unusual Places
  * Text Domain: unusual-places-explorer
  */
@@ -12,10 +12,14 @@ if (!defined('ABSPATH')) {
 }
 
 final class UP_Strange_Place_Picker {
-	const VERSION = '1.1.2';
+	const VERSION = '1.2.0';
 	const SHORTCODE = 'up_strange_place_picker';
-	const CACHE_KEY = 'up_spp_index_v112';
+	const CACHE_KEY = 'up_spp_index_v120';
+	const BOOTSTRAP_CACHE_KEY = 'up_spp_bootstrap_v120';
+	const LEGACY_CACHE_KEY = 'up_spp_index_v112';
 	const CRON_HOOK = 'up_spp_monthly_rebuild';
+	const REFRESH_HOOK = 'up_spp_delayed_rebuild';
+	const OPTION_EXCLUDED_CATEGORIES = 'up_spp_excluded_categories';
 	const META_LAT = '_up_spp_lat';
 	const META_LNG = '_up_spp_lng';
 	const META_LABEL = '_up_spp_place_label';
@@ -26,6 +30,14 @@ final class UP_Strange_Place_Picker {
 	const META_MOODS = '_up_spp_inferred_moods';
 	const META_TYPE = '_up_spp_inferred_type';
 	const META_REGIONS = '_up_spp_inferred_regions';
+	const META_RECORD_TYPE = '_up_spp_record_type';
+	const META_INCLUSION = '_up_spp_inclusion';
+	const META_MANUAL_TYPE = '_up_spp_manual_place_type';
+	const META_COST = '_up_spp_cost';
+	const META_OPENING_STATUS = '_up_spp_opening_status';
+	const META_DOG_FRIENDLY = '_up_spp_dog_friendly';
+	const META_ENVIRONMENT = '_up_spp_environment';
+	const META_LAST_VERIFIED = '_up_spp_last_verified';
 
 	private static $instance = null;
 
@@ -40,6 +52,8 @@ final class UP_Strange_Place_Picker {
 		add_shortcode(self::SHORTCODE, array($this, 'shortcode'));
 		add_action('wp_enqueue_scripts', array($this, 'register_assets'));
 		add_action(self::CRON_HOOK, array($this, 'rebuild_cache'));
+		add_action(self::REFRESH_HOOK, array($this, 'rebuild_cache'));
+		add_action('rest_api_init', array($this, 'register_rest_routes'));
 		add_action('save_post_post', array($this, 'clear_cache_on_post_save'), 20, 3);
 		add_action('admin_menu', array($this, 'admin_menu'));
 		add_action('add_meta_boxes', array($this, 'add_meta_boxes'));
@@ -55,7 +69,23 @@ final class UP_Strange_Place_Picker {
 
 	public static function deactivate() {
 		wp_clear_scheduled_hook(self::CRON_HOOK);
+		wp_clear_scheduled_hook(self::REFRESH_HOOK);
 		delete_transient(self::CACHE_KEY);
+		delete_transient(self::BOOTSTRAP_CACHE_KEY);
+	}
+
+	public function register_rest_routes() {
+		register_rest_route('up-spp/v1', '/index', array(
+			'methods' => WP_REST_Server::READABLE,
+			'callback' => array($this, 'rest_index'),
+			'permission_callback' => '__return_true',
+		));
+	}
+
+	public function rest_index() {
+		$response = rest_ensure_response($this->get_index());
+		$response->header('Cache-Control', 'public, max-age=3600, stale-while-revalidate=86400');
+		return $response;
 	}
 
 	public function register_assets() {
@@ -75,7 +105,7 @@ final class UP_Strange_Place_Picker {
 	}
 
 	public function shortcode() {
-		$data = $this->get_index();
+		$data = $this->get_bootstrap_index();
 		$posts = isset($data['posts']) && is_array($data['posts']) ? $data['posts'] : array();
 		$starter = !empty($posts) ? $posts[0] : null;
 		$uid = 'up-spp-' . wp_rand(1000, 999999);
@@ -85,7 +115,7 @@ final class UP_Strange_Place_Picker {
 
 		ob_start();
 		?>
-		<section id="<?php echo esc_attr($uid); ?>" class="up-spp" data-up-spp-root>
+		<section id="<?php echo esc_attr($uid); ?>" class="up-spp" data-up-spp-root data-up-spp-index-url="<?php echo esc_url(rest_url('up-spp/v1/index')); ?>">
 			<div class="up-spp__intro">
 				<p class="up-spp__eyebrow">Unusual places finder</p>
 				<h2>The Strange Place Picker</h2>
@@ -206,6 +236,53 @@ final class UP_Strange_Place_Picker {
 	private function decode_public_text($text) {
 		$text = html_entity_decode((string) $text, ENT_QUOTES | ENT_HTML5, get_bloginfo('charset') ?: 'UTF-8');
 		return wp_specialchars_decode($text, ENT_QUOTES);
+	}
+
+	private function field_options() {
+		static $options = null;
+		if (null === $options) {
+			$options = array(
+				'record_type' => array('auto' => 'Auto / Unclassified', 'single' => 'Single Place', 'multi' => 'Multi-place / List', 'non_place' => 'Non-place'),
+				'inclusion' => array('auto' => 'Auto', 'include' => 'Include', 'exclude' => 'Exclude'),
+				'place_type' => array('' => 'Auto / inferred', 'Natural wonder' => 'Natural wonder', 'Abandoned place' => 'Abandoned place', 'Historic site' => 'Historic site', 'Architectural oddity' => 'Architectural oddity', 'Roadside attraction' => 'Roadside attraction', 'Unusual place' => 'Unusual place'),
+				'cost' => array('unknown' => 'Unknown', 'free' => 'Free', 'paid' => 'Paid', 'varies' => 'Varies / Mixed'),
+				'opening_status' => array('unknown' => 'Unknown', 'open' => 'Open', 'seasonal' => 'Seasonal', 'temporarily_closed' => 'Temporarily Closed', 'permanently_closed' => 'Permanently Closed'),
+				'dog_friendly' => array('unknown' => 'Unknown', 'yes' => 'Yes', 'no' => 'No', 'restrictions' => 'Restrictions'),
+				'environment' => array('unknown' => 'Unknown', 'outdoor' => 'Outdoor', 'indoor' => 'Indoor', 'both' => 'Both'),
+			);
+		}
+		return $options;
+	}
+
+	private function meta_choice($post_id, $meta_key, $group, $default = 'auto') {
+		$options = $this->field_options();
+		$value = (string) get_post_meta($post_id, $meta_key, true);
+		return isset($options[$group][$value]) ? $value : $default;
+	}
+
+	private function update_meta_if_changed($post_id, $meta_key, $value) {
+		if (get_post_meta($post_id, $meta_key, true) !== $value) {
+			update_post_meta($post_id, $meta_key, $value);
+		}
+	}
+
+	private function structured_fields($post_id, $inferred_type) {
+		$manual_type = (string) get_post_meta($post_id, self::META_MANUAL_TYPE, true);
+		$place_types = $this->field_options()['place_type'];
+		if (!isset($place_types[$manual_type])) {
+			$manual_type = '';
+		}
+		return array(
+			'recordType' => $this->meta_choice($post_id, self::META_RECORD_TYPE, 'record_type'),
+			'inclusion' => $this->meta_choice($post_id, self::META_INCLUSION, 'inclusion'),
+			'type' => '' !== $manual_type ? $manual_type : $inferred_type,
+			'manualType' => $manual_type,
+			'cost' => $this->meta_choice($post_id, self::META_COST, 'cost', 'unknown'),
+			'openingStatus' => $this->meta_choice($post_id, self::META_OPENING_STATUS, 'opening_status', 'unknown'),
+			'dogFriendly' => $this->meta_choice($post_id, self::META_DOG_FRIENDLY, 'dog_friendly', 'unknown'),
+			'environment' => $this->meta_choice($post_id, self::META_ENVIRONMENT, 'environment', 'unknown'),
+			'lastVerified' => (string) get_post_meta($post_id, self::META_LAST_VERIFIED, true),
+		);
 	}
 
 	private function keyword_score($text, $word) {
@@ -442,23 +519,19 @@ final class UP_Strange_Place_Picker {
 		}
 		$inferred = $this->infer_coords($content_text, $categories, $tags);
 		if (!$inferred) {
-			delete_post_meta($post_id, self::META_INFERRED_LAT);
-			delete_post_meta($post_id, self::META_INFERRED_LNG);
-			delete_post_meta($post_id, self::META_INFERRED_LABEL);
-			delete_post_meta($post_id, self::META_GEO_SOURCE);
 			return;
 		}
-		update_post_meta($post_id, self::META_INFERRED_LAT, (string) $inferred['lat']);
-		update_post_meta($post_id, self::META_INFERRED_LNG, (string) $inferred['lng']);
-		update_post_meta($post_id, self::META_INFERRED_LABEL, $inferred['label']);
-		update_post_meta($post_id, self::META_GEO_SOURCE, $inferred['source']);
+		$this->update_meta_if_changed($post_id, self::META_INFERRED_LAT, (string) $inferred['lat']);
+		$this->update_meta_if_changed($post_id, self::META_INFERRED_LNG, (string) $inferred['lng']);
+		$this->update_meta_if_changed($post_id, self::META_INFERRED_LABEL, $inferred['label']);
+		$this->update_meta_if_changed($post_id, self::META_GEO_SOURCE, $inferred['source']);
 	}
 
 	private function store_inferred_classification($post_id, $content_text, $categories) {
 		$text = strtolower($content_text);
-		update_post_meta($post_id, self::META_MOODS, $this->moods($text));
-		update_post_meta($post_id, self::META_TYPE, $this->type($text));
-		update_post_meta($post_id, self::META_REGIONS, $this->regions($categories, $text));
+		$this->update_meta_if_changed($post_id, self::META_MOODS, $this->moods($text));
+		$this->update_meta_if_changed($post_id, self::META_TYPE, $this->type($text));
+		$this->update_meta_if_changed($post_id, self::META_REGIONS, $this->regions($categories, $text));
 	}
 
 	private function exact_coords($post_id) {
@@ -560,7 +633,44 @@ final class UP_Strange_Place_Picker {
 		if (is_array($cached) && !empty($cached['posts'])) {
 			return $cached;
 		}
+		$legacy = get_transient(self::LEGACY_CACHE_KEY);
+		if (is_array($legacy) && !empty($legacy['posts'])) {
+			$this->schedule_rebuild();
+			return $legacy;
+		}
 		return $this->rebuild_cache();
+	}
+
+	private function get_bootstrap_index() {
+		$cached = get_transient(self::BOOTSTRAP_CACHE_KEY);
+		if (is_array($cached) && !empty($cached['posts'])) {
+			return $cached;
+		}
+		return $this->bootstrap_data($this->get_index());
+	}
+
+	private function bootstrap_data($data) {
+		$posts = isset($data['posts']) && is_array($data['posts']) ? $data['posts'] : array();
+		$data['postCount'] = isset($data['postCount']) ? (int) $data['postCount'] : count($posts);
+		$data['posts'] = array_slice($posts, 0, 20);
+		$data['partial'] = $data['postCount'] > count($data['posts']);
+		return $data;
+	}
+
+	private function exclusion_reason($record_type, $inclusion, $category_ids, $excluded_categories, $score, $is_promo) {
+		if ('exclude' === $inclusion) {
+			return 'post';
+		}
+		if ('include' === $inclusion) {
+			return '';
+		}
+		if ('non_place' === $record_type) {
+			return 'non_place';
+		}
+		if ($excluded_categories && array_intersect($excluded_categories, $category_ids)) {
+			return 'category';
+		}
+		return ($score < 4 || $is_promo) ? 'existing_rules' : '';
 	}
 
 	public function rebuild_cache() {
@@ -578,6 +688,8 @@ final class UP_Strange_Place_Picker {
 		$posts = array();
 		$region_counts = array();
 		$mood_counts = array();
+		$excluded_counts = array('post' => 0, 'category' => 0, 'non_place' => 0, 'existing_rules' => 0);
+		$excluded_categories = array_map('intval', (array) get_option(self::OPTION_EXCLUDED_CATEGORIES, array()));
 		$promo_pattern = '/\b(sponsored|promo|casino|insurance|car rental|rent a car|airbnb|vacation rental|loan|essay|write for us|guest post|coupon|discount|moving company|shipping|visa|travel tips|guide to choosing|best ways to|things to consider)\b/i';
 		$place_pattern = '/\b(castle|island|village|city|town|monastery|church|temple|ruins?|cave|bridge|road|lake|mountain|forest|park|museum|palace|tower|cemetery|tomb|monument|house|building|beach|desert|waterfall|cliff|valley|fortress|sanctuary|ghost town|abandoned|garden|statue|tunnel|railway|station|mine|volcano|rock|pyramid|cathedral|chapel|pillar)\b/i';
 
@@ -593,6 +705,9 @@ final class UP_Strange_Place_Picker {
 			$this->maybe_store_inferred_coords($post_id, $content_text, $categories, $tags);
 			$this->store_inferred_classification($post_id, $content_text, $categories);
 			$coords = $this->coords($post_id);
+			$record_type = $this->meta_choice($post_id, self::META_RECORD_TYPE, 'record_type');
+			$inclusion = $this->meta_choice($post_id, self::META_INCLUSION, 'inclusion');
+			$category_ids = wp_get_post_categories($post_id);
 			$score = 0;
 			$score += has_post_thumbnail($post_id) ? 2 : 0;
 			$score += $coords ? 5 : 0;
@@ -602,12 +717,16 @@ final class UP_Strange_Place_Picker {
 			$score -= $travel_only ? 2 : 0;
 			$score -= $is_promo ? 6 : 0;
 
-			if ($score < 4 || $is_promo) {
+			$exclusion_reason = $this->exclusion_reason($record_type, $inclusion, $category_ids, $excluded_categories, $score, $is_promo);
+			if ('' !== $exclusion_reason) {
+				$excluded_counts[$exclusion_reason]++;
 				continue;
 			}
 
 			$moods = $this->moods($text);
-			$type = $this->type($text);
+			$inferred_type = $this->type($text);
+			$structured = $this->structured_fields($post_id, $inferred_type);
+			$type = $structured['type'];
 			$regions = $this->regions($categories, $text);
 			$excerpt = get_the_excerpt($post_id);
 			if ('' === $excerpt) {
@@ -640,6 +759,13 @@ final class UP_Strange_Place_Picker {
 				'lng' => $coords ? $coords['lng'] : null,
 				'placeLabel' => $coords && !empty($coords['label']) ? $coords['label'] : '',
 				'geoSource' => $coords && !empty($coords['source']) ? $coords['source'] : '',
+				'recordType' => $structured['recordType'],
+				'inclusion' => $structured['inclusion'],
+				'cost' => $structured['cost'],
+				'openingStatus' => $structured['openingStatus'],
+				'dogFriendly' => $structured['dogFriendly'],
+				'environment' => $structured['environment'],
+				'lastVerified' => $structured['lastVerified'],
 				'_score' => $score,
 			);
 		}
@@ -659,6 +785,7 @@ final class UP_Strange_Place_Picker {
 
 		$data = array(
 			'posts' => $posts,
+			'postCount' => count($posts),
 			'regionGroups' => $this->region_groups($region_counts),
 			'moods' => array('Any', 'Beautiful', 'Creepy', 'Forgotten', 'Fairytale', 'Movie-like', 'Ancient', 'Abandoned', 'Roadside weird', 'Peaceful but strange'),
 			'coordinateCount' => count(array_filter($posts, function($post) {
@@ -672,11 +799,13 @@ final class UP_Strange_Place_Picker {
 			})),
 			'moodCounts' => $mood_counts,
 			'regionCounts' => $region_counts,
+			'excludedCounts' => $excluded_counts,
 			'builtAt' => current_time('mysql'),
 			'version' => self::VERSION,
 		);
 
 		set_transient(self::CACHE_KEY, $data, 35 * DAY_IN_SECONDS);
+		set_transient(self::BOOTSTRAP_CACHE_KEY, $this->bootstrap_data($data), 35 * DAY_IN_SECONDS);
 		update_option('up_spp_last_rebuild', current_time('mysql'), false);
 		return $data;
 	}
@@ -723,7 +852,13 @@ final class UP_Strange_Place_Picker {
 			$this->maybe_store_inferred_coords($post_id, $content_text, $categories, $tags);
 			$this->store_inferred_classification($post_id, $content_text, $categories);
 		}
-		delete_transient(self::CACHE_KEY);
+		$this->schedule_rebuild();
+	}
+
+	private function schedule_rebuild() {
+		if (!wp_next_scheduled(self::REFRESH_HOOK)) {
+			wp_schedule_single_event(time() + MINUTE_IN_SECONDS, self::REFRESH_HOOK);
+		}
 	}
 
 	public function admin_menu() {
@@ -738,7 +873,16 @@ final class UP_Strange_Place_Picker {
 			$this->rebuild_cache();
 			echo '<div class="updated"><p>Strange Place Picker cache rebuilt.</p></div>';
 		}
-		$data = $this->get_index();
+		if (isset($_POST['up_spp_save_categories']) && check_admin_referer('up_spp_save_categories')) {
+			$submitted = isset($_POST['up_spp_excluded_categories']) ? (array) wp_unslash($_POST['up_spp_excluded_categories']) : array();
+			$excluded = array_values(array_unique(array_filter(array_map('absint', $submitted))));
+			update_option(self::OPTION_EXCLUDED_CATEGORIES, $excluded, false);
+			$this->rebuild_cache();
+			echo '<div class="updated"><p>Excluded categories saved and picker cache rebuilt.</p></div>';
+		}
+		$data = $this->get_bootstrap_index();
+		$excluded_categories = array_map('intval', (array) get_option(self::OPTION_EXCLUDED_CATEGORIES, array()));
+		$categories = get_categories(array('hide_empty' => false, 'orderby' => 'name', 'order' => 'ASC'));
 		?>
 		<div class="wrap">
 			<h1>Unusual Places Explorer</h1>
@@ -747,13 +891,27 @@ final class UP_Strange_Place_Picker {
 				<?php wp_nonce_field('up_spp_rebuild'); ?>
 				<p><button class="button button-primary" name="up_spp_rebuild" value="1">Rebuild picker cache now</button></p>
 			</form>
+			<h2>Excluded Categories</h2>
+			<p>Posts in selected categories are excluded when their per-post inclusion is Auto. A per-post Include setting overrides this list.</p>
+			<form method="post" style="max-width:760px">
+				<?php wp_nonce_field('up_spp_save_categories'); ?>
+				<fieldset style="columns:2;column-gap:24px">
+					<?php foreach ($categories as $category) : ?>
+						<label style="display:block;margin:0 0 8px;break-inside:avoid"><input type="checkbox" name="up_spp_excluded_categories[]" value="<?php echo esc_attr($category->term_id); ?>" <?php checked(in_array((int) $category->term_id, $excluded_categories, true)); ?>> <?php echo esc_html($category->name); ?></label>
+					<?php endforeach; ?>
+				</fieldset>
+				<p><button class="button button-primary" name="up_spp_save_categories" value="1">Save excluded categories</button></p>
+			</form>
 			<h2>Index Status</h2>
 			<table class="widefat striped" style="max-width:760px">
 				<tbody>
-					<tr><th>Indexed posts</th><td><?php echo esc_html(count($data['posts'])); ?></td></tr>
+					<tr><th>Indexed posts</th><td><?php echo esc_html(isset($data['postCount']) ? $data['postCount'] : count($data['posts'])); ?></td></tr>
 					<tr><th>Posts with coordinates</th><td><?php echo esc_html($data['coordinateCount']); ?></td></tr>
 					<tr><th>Exact manual coordinates</th><td><?php echo esc_html(isset($data['exactCoordinateCount']) ? $data['exactCoordinateCount'] : 0); ?></td></tr>
 					<tr><th>Inferred coordinates</th><td><?php echo esc_html(isset($data['inferredCoordinateCount']) ? $data['inferredCoordinateCount'] : 0); ?></td></tr>
+					<tr><th>Excluded by post setting</th><td><?php echo esc_html(isset($data['excludedCounts']['post']) ? $data['excludedCounts']['post'] : 0); ?></td></tr>
+					<tr><th>Excluded by category</th><td><?php echo esc_html(isset($data['excludedCounts']['category']) ? $data['excludedCounts']['category'] : 0); ?></td></tr>
+					<tr><th>Excluded as non-place</th><td><?php echo esc_html(isset($data['excludedCounts']['non_place']) ? $data['excludedCounts']['non_place'] : 0); ?></td></tr>
 					<tr><th>Last rebuilt</th><td><?php echo esc_html(isset($data['builtAt']) ? $data['builtAt'] : get_option('up_spp_last_rebuild', 'Never')); ?></td></tr>
 					<tr><th>Next monthly rebuild</th><td><?php $next = wp_next_scheduled(self::CRON_HOOK); echo esc_html($next ? date_i18n(get_option('date_format') . ' ' . get_option('time_format'), $next) : 'Not scheduled'); ?></td></tr>
 				</tbody>
@@ -772,11 +930,24 @@ final class UP_Strange_Place_Picker {
 	}
 
 	public function add_meta_boxes() {
-		add_meta_box('up-spp-coordinates', 'Strange Place Picker Coordinates', array($this, 'render_meta_box'), 'post', 'side', 'default');
+		add_meta_box('up-spp-coordinates', 'Unusual Places Explorer Data', array($this, 'render_meta_box'), 'post', 'side', 'default');
+	}
+
+	private function render_select($id, $label, $value, $options) {
+		?>
+		<p><label for="<?php echo esc_attr($id); ?>"><strong><?php echo esc_html($label); ?></strong></label><br>
+			<select id="<?php echo esc_attr($id); ?>" name="<?php echo esc_attr($id); ?>" class="widefat">
+				<?php foreach ($options as $option_value => $option_label) : ?>
+					<option value="<?php echo esc_attr($option_value); ?>" <?php selected($value, (string) $option_value); ?>><?php echo esc_html($option_label); ?></option>
+				<?php endforeach; ?>
+			</select>
+		</p>
+		<?php
 	}
 
 	public function render_meta_box($post) {
 		wp_nonce_field('up_spp_save_place_meta', 'up_spp_place_meta_nonce');
+		$options = $this->field_options();
 		$lat = get_post_meta($post->ID, self::META_LAT, true);
 		$lng = get_post_meta($post->ID, self::META_LNG, true);
 		$label = get_post_meta($post->ID, self::META_LABEL, true);
@@ -787,21 +958,35 @@ final class UP_Strange_Place_Picker {
 		$inferred_moods = get_post_meta($post->ID, self::META_MOODS, true);
 		$inferred_regions = get_post_meta($post->ID, self::META_REGIONS, true);
 		$inferred_type = get_post_meta($post->ID, self::META_TYPE, true);
+		$record_type = $this->meta_choice($post->ID, self::META_RECORD_TYPE, 'record_type');
+		$inclusion = $this->meta_choice($post->ID, self::META_INCLUSION, 'inclusion');
+		$manual_type = (string) get_post_meta($post->ID, self::META_MANUAL_TYPE, true);
+		$cost = $this->meta_choice($post->ID, self::META_COST, 'cost', 'unknown');
+		$opening_status = $this->meta_choice($post->ID, self::META_OPENING_STATUS, 'opening_status', 'unknown');
+		$dog_friendly = $this->meta_choice($post->ID, self::META_DOG_FRIENDLY, 'dog_friendly', 'unknown');
+		$environment = $this->meta_choice($post->ID, self::META_ENVIRONMENT, 'environment', 'unknown');
+		$last_verified = (string) get_post_meta($post->ID, self::META_LAST_VERIFIED, true);
 		?>
-		<p><label for="up_spp_place_label">Place label</label><br><input id="up_spp_place_label" name="up_spp_place_label" type="text" value="<?php echo esc_attr($label); ?>" class="widefat" placeholder="Vardzia, Georgia"></p>
-		<p><label for="up_spp_lat">Latitude</label><br><input id="up_spp_lat" name="up_spp_lat" type="text" value="<?php echo esc_attr($lat); ?>" class="widefat" placeholder="41.381"></p>
-		<p><label for="up_spp_lng">Longitude</label><br><input id="up_spp_lng" name="up_spp_lng" type="text" value="<?php echo esc_attr($lng); ?>" class="widefat" placeholder="43.284"></p>
+		<?php $this->render_select('up_spp_record_type', 'Explorer Record Type', $record_type, $options['record_type']); ?>
+		<?php $this->render_select('up_spp_inclusion', 'Strange Place Picker Inclusion', $inclusion, $options['inclusion']); ?>
+		<hr>
+		<p><label for="up_spp_place_label"><strong>Place label</strong></label><br><input id="up_spp_place_label" name="up_spp_place_label" type="text" value="<?php echo esc_attr($label); ?>" class="widefat" placeholder="Vardzia, Georgia"></p>
+		<p><label for="up_spp_lat"><strong>Exact latitude</strong></label><br><input id="up_spp_lat" name="up_spp_lat" type="number" min="-90" max="90" step="any" value="<?php echo esc_attr($lat); ?>" class="widefat" placeholder="41.381"></p>
+		<p><label for="up_spp_lng"><strong>Exact longitude</strong></label><br><input id="up_spp_lng" name="up_spp_lng" type="number" min="-180" max="180" step="any" value="<?php echo esc_attr($lng); ?>" class="widefat" placeholder="43.284"></p>
 		<?php if (is_numeric($inferred_lat) && is_numeric($inferred_lng)) : ?>
 			<hr>
 			<p><strong>Inferred fallback</strong><br><?php echo esc_html($inferred_label ? $inferred_label : 'Approximate article location'); ?><br><code><?php echo esc_html($inferred_lat); ?>, <?php echo esc_html($inferred_lng); ?></code><br><span class="description"><?php echo esc_html($geo_source ? $geo_source : 'inferred'); ?></span></p>
 		<?php endif; ?>
-		<?php if (!empty($inferred_moods) || !empty($inferred_regions) || !empty($inferred_type)) : ?>
-			<p><strong>Picker classification</strong><br>
-				<?php if (!empty($inferred_moods) && is_array($inferred_moods)) : ?>Moods: <?php echo esc_html(implode(', ', $inferred_moods)); ?><br><?php endif; ?>
-				<?php if (!empty($inferred_regions) && is_array($inferred_regions)) : ?>Regions: <?php echo esc_html(implode(', ', $inferred_regions)); ?><br><?php endif; ?>
-				<?php if (!empty($inferred_type)) : ?>Type: <?php echo esc_html($inferred_type); ?><?php endif; ?>
-			</p>
-		<?php endif; ?>
+		<hr>
+		<?php $this->render_select('up_spp_manual_place_type', 'Place Type', $manual_type, $options['place_type']); ?>
+		<?php if (!empty($inferred_type)) : ?><p class="description">Inferred type: <?php echo esc_html($inferred_type); ?></p><?php endif; ?>
+		<?php $this->render_select('up_spp_cost', 'Cost', $cost, $options['cost']); ?>
+		<?php $this->render_select('up_spp_opening_status', 'Opening Status', $opening_status, $options['opening_status']); ?>
+		<?php $this->render_select('up_spp_dog_friendly', 'Dog Friendly', $dog_friendly, $options['dog_friendly']); ?>
+		<?php $this->render_select('up_spp_environment', 'Environment', $environment, $options['environment']); ?>
+		<p><label for="up_spp_last_verified"><strong>Last Verified</strong></label><br><input id="up_spp_last_verified" name="up_spp_last_verified" type="date" value="<?php echo esc_attr($last_verified); ?>" class="widefat"></p>
+		<?php if (!empty($inferred_moods) && is_array($inferred_moods)) : ?><p class="description">Inferred moods: <?php echo esc_html(implode(', ', $inferred_moods)); ?></p><?php endif; ?>
+		<?php if (!empty($inferred_regions) && is_array($inferred_regions)) : ?><p class="description">Inferred regions: <?php echo esc_html(implode(', ', $inferred_regions)); ?></p><?php endif; ?>
 		<p class="description">Exact coordinates override inferred ones. Visitor locations stay in the browser and are not saved.</p>
 		<?php
 	}
@@ -813,21 +998,52 @@ final class UP_Strange_Place_Picker {
 		if (!current_user_can('edit_post', $post_id)) {
 			return;
 		}
-		foreach (array(self::META_LAT => 'up_spp_lat', self::META_LNG => 'up_spp_lng') as $meta_key => $field) {
-			$value = isset($_POST[$field]) ? trim(sanitize_text_field(wp_unslash($_POST[$field]))) : '';
-			if ('' === $value) {
+		$options = $this->field_options();
+		$choice_fields = array(
+			self::META_RECORD_TYPE => array('field' => 'up_spp_record_type', 'group' => 'record_type', 'default' => 'auto'),
+			self::META_INCLUSION => array('field' => 'up_spp_inclusion', 'group' => 'inclusion', 'default' => 'auto'),
+			self::META_MANUAL_TYPE => array('field' => 'up_spp_manual_place_type', 'group' => 'place_type', 'default' => ''),
+			self::META_COST => array('field' => 'up_spp_cost', 'group' => 'cost', 'default' => 'unknown'),
+			self::META_OPENING_STATUS => array('field' => 'up_spp_opening_status', 'group' => 'opening_status', 'default' => 'unknown'),
+			self::META_DOG_FRIENDLY => array('field' => 'up_spp_dog_friendly', 'group' => 'dog_friendly', 'default' => 'unknown'),
+			self::META_ENVIRONMENT => array('field' => 'up_spp_environment', 'group' => 'environment', 'default' => 'unknown'),
+		);
+		foreach ($choice_fields as $meta_key => $config) {
+			$value = isset($_POST[$config['field']]) ? sanitize_text_field(wp_unslash($_POST[$config['field']])) : $config['default'];
+			if (!isset($options[$config['group']][$value])) {
+				$value = $config['default'];
+			}
+			if ($value === $config['default']) {
 				delete_post_meta($post_id, $meta_key);
-			} elseif (is_numeric($value)) {
-				update_post_meta($post_id, $meta_key, (string) (float) $value);
+			} else {
+				update_post_meta($post_id, $meta_key, $value);
 			}
 		}
+
+		$lat = isset($_POST['up_spp_lat']) ? trim(sanitize_text_field(wp_unslash($_POST['up_spp_lat']))) : '';
+		$lng = isset($_POST['up_spp_lng']) ? trim(sanitize_text_field(wp_unslash($_POST['up_spp_lng']))) : '';
+		if ('' === $lat && '' === $lng) {
+			delete_post_meta($post_id, self::META_LAT);
+			delete_post_meta($post_id, self::META_LNG);
+		} elseif (is_numeric($lat) && is_numeric($lng) && (float) $lat >= -90 && (float) $lat <= 90 && (float) $lng >= -180 && (float) $lng <= 180) {
+			update_post_meta($post_id, self::META_LAT, (string) (float) $lat);
+			update_post_meta($post_id, self::META_LNG, (string) (float) $lng);
+		}
+
 		$label = isset($_POST['up_spp_place_label']) ? sanitize_text_field(wp_unslash($_POST['up_spp_place_label'])) : '';
 		if ('' === $label) {
 			delete_post_meta($post_id, self::META_LABEL);
 		} else {
 			update_post_meta($post_id, self::META_LABEL, $label);
 		}
-		delete_transient(self::CACHE_KEY);
+
+		$last_verified = isset($_POST['up_spp_last_verified']) ? sanitize_text_field(wp_unslash($_POST['up_spp_last_verified'])) : '';
+		if ('' === $last_verified) {
+			delete_post_meta($post_id, self::META_LAST_VERIFIED);
+		} elseif (preg_match('/^(\d{4})-(\d{2})-(\d{2})$/', $last_verified, $date_parts) && checkdate((int) $date_parts[2], (int) $date_parts[3], (int) $date_parts[1])) {
+			update_post_meta($post_id, self::META_LAST_VERIFIED, $last_verified);
+		}
+		$this->schedule_rebuild();
 	}
 }
 
